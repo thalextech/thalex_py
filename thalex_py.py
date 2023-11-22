@@ -125,6 +125,12 @@ class Thalex:
     async def login(
         self, token: str, account: Optional[str] = None, id: Optional[int] = None
     ):
+        """Login
+
+        :token:  As described in 'Authentication'
+        :account:  Number of an account to select for use in this session. Optional, if not specified,
+        default account for the API key is selected.
+        """
         await self._send(
             "public/login",
             id,
@@ -135,6 +141,10 @@ class Thalex:
     async def set_cancel_on_disconnect(
         self, timeout_secs: Optional[int] = None, id: Optional[int] = None
     ):
+        """Set cancel on disconnect
+
+        :timeout_secs:  Heartbeat interval
+        """
         await self._send(
             "private/set_cancel_on_disconnect",
             id,
@@ -142,21 +152,41 @@ class Thalex:
         )
 
     async def instruments(self, id: Optional[int] = None):
+        """Active instruments
+        """
         await self._send("public/instruments", id)
 
     async def all_instruments(self, id: Optional[int] = None):
+        """All instruments
+        """
         await self._send("public/all_instruments", id)
 
     async def instrument(self, instrument_name: str, id: Optional[int] = None):
+        """Single instrument
+
+        :instrument_name:  Name of the instrument to query.
+        """
         await self._send("public/instrument", id, instrument_name=instrument_name)
 
     async def ticker(self, instrument_name: str, id: Optional[int] = None):
+        """Single ticker value
+
+        :instrument_name:  Name of the instrument to query.
+        """
         await self._send("public/ticker", id, instrument_name=instrument_name)
 
     async def index(self, underlying: str, id: Optional[int] = None):
+        """Single index value
+
+        :underlying:  The underlying (e.g. `BTCUSD`).
+        """
         await self._send("public/index", id, underlying=underlying)
 
     async def book(self, instrument_name: str, id: Optional[int] = None):
+        """Single order book
+
+        :instrument_name:  Name of the instrument to query.
+        """
         await self._send("public/book", id, instrument_name=instrument_name)
 
     async def insert(
@@ -175,6 +205,39 @@ class Thalex:
         collar: Optional[Collar] = None,
         id: Optional[int] = None,
     ):
+        """Insert order
+
+        :direction:  Direction
+        :client_order_id:  Session-local identifier for this order. Only valid for websocket sessions. If set,
+        must be an integer between 0 and 2^64-1, inclusive. When using numbers larger than 2^32,
+        please beware of implicit floating point conversions in some JSON libraries.
+        :instrument_name:  Instrument name
+        :price:  Limit price; required for limit orders.
+        :amount:  Amount of currency to trade (e.g. BTC for futures).
+        :label: {'type': 'string'},
+        :order_type:  OrderType, default': 'limit'
+        :time_in_force:  Note that for limit orders, the default `time_in_force` is `good_till_cancelled`,
+        while for market orders, the default is `immediate_or_cancel`.
+        It is illegal to send a GTC market order, or an IOC post order.
+        :post_only:  If the order price is in cross with the current best price on the opposite side in the
+        order book, then the price is adjusted to one tick away from that price, ensuring that
+        the order will never trade on insert. If the adjusted price of a buy order falls at or
+        below zero where not allowed, then the order is cancelled with delete reason 'immediate_cancel'.
+        :reject_post_only:  This flag is only effective in combination with post_only.
+        If set, then instead of adjusting the order price, the order will be cancelled with delete reason 'immediate_cancel'.
+        The combination of post_only and reject_post_only is effectively a book-or-cancel order.
+        :reduce_only:  An order marked `reduce_only` will have its amount reduced to the open position.
+        If there is no open position, or if the order direction would cause an increase of the open position,
+        the order is rejected. If the order is placed in the book, it will be subsequently monitored,
+        and reduced to the open position if the position changes through other means (best effort).
+        Multiple reduce-only orders will all be reduced individually.
+        :collar:  If the instrument has a safety price collar set, and the limit price of the order
+        (infinite for market orders) is in cross with (more aggressive than) this collar, how to handle.
+        If set to `ignore`, the order will proceed as requested. If `reject`,\nthe order fails early.
+        If `clamp`, the price is adjusted to the collar.
+        The default is `clamp` for market orders and `reject` for everything else.
+        Collar `ignore` is forbidden for market orders.
+        """
         await self._send(
             "private/insert",
             id,
@@ -207,6 +270,38 @@ class Thalex:
         collar: Optional[Collar] = None,
         id: Optional[int] = None,
     ):
+        """Insert buy order
+
+        :client_order_id:  Session-local identifier for this order. Only valid for websocket sessions. If set,
+        must be an integer between 0 and 2^64-1, inclusive. When using numbers larger than 2^32,
+        please beware of implicit floating point conversions in some JSON libraries.
+        :instrument_name:  Instrument name
+        :price:  Limit price; required for limit orders.
+        :amount:  Amount of currency to trade (e.g. BTC for futures).
+        :label: {'type': 'string'},
+        :order_type:  OrderType, default': 'limit'
+        :time_in_force:  Note that for limit orders, the default `time_in_force` is `good_till_cancelled`,
+        while for market orders, the default is `immediate_or_cancel`.
+        It is illegal to send a GTC market order, or an IOC post order.
+        :post_only:  If the order price is in cross with the current best price on the opposite side in the
+        order book, then the price is adjusted to one tick away from that price, ensuring that
+        the order will never trade on insert. If the adjusted price of a buy order falls at or
+        below zero where not allowed, then the order is cancelled with delete reason 'immediate_cancel'.
+        :reject_post_only:  This flag is only effective in combination with post_only.
+        If set, then instead of adjusting the order price, the order will be cancelled with delete reason 'immediate_cancel'.
+        The combination of post_only and reject_post_only is effectively a book-or-cancel order.
+        :reduce_only:  An order marked `reduce_only` will have its amount reduced to the open position.
+        If there is no open position, or if the order direction would cause an increase of the open position,
+        the order is rejected. If the order is placed in the book, it will be subsequently monitored,
+        and reduced to the open position if the position changes through other means (best effort).
+        Multiple reduce-only orders will all be reduced individually.
+        :collar:  If the instrument has a safety price collar set, and the limit price of the order
+        (infinite for market orders) is in cross with (more aggressive than) this collar, how to handle.
+        If set to `ignore`, the order will proceed as requested. If `reject`,\nthe order fails early.
+        If `clamp`, the price is adjusted to the collar.
+        The default is `clamp` for market orders and `reject` for everything else.
+        Collar `ignore` is forbidden for market orders.
+        """
         await self._send(
             "private/buy",
             id,
@@ -238,6 +333,38 @@ class Thalex:
         collar: Optional[Collar] = None,
         id: Optional[int] = None,
     ):
+        """Insert sell order
+
+        :client_order_id:  Session-local identifier for this order. Only valid for websocket sessions. If set,
+        must be an integer between 0 and 2^64-1, inclusive. When using numbers larger than 2^32,
+        please beware of implicit floating point conversions in some JSON libraries.
+        :instrument_name:  Instrument name
+        :price:  Limit price; required for limit orders.
+        :amount:  Amount of currency to trade (e.g. BTC for futures).
+        :label: {'type': 'string'},
+        :order_type:  OrderType, default': 'limit'
+        :time_in_force:  Note that for limit orders, the default `time_in_force` is `good_till_cancelled`,
+        while for market orders, the default is `immediate_or_cancel`.
+        It is illegal to send a GTC market order, or an IOC post order.
+        :post_only:  If the order price is in cross with the current best price on the opposite side in the
+        order book, then the price is adjusted to one tick away from that price, ensuring that
+        the order will never trade on insert. If the adjusted price of a buy order falls at or
+        below zero where not allowed, then the order is cancelled with delete reason 'immediate_cancel'.
+        :reject_post_only:  This flag is only effective in combination with post_only.
+        If set, then instead of adjusting the order price, the order will be cancelled with delete reason 'immediate_cancel'.
+        The combination of post_only and reject_post_only is effectively a book-or-cancel order.
+        :reduce_only:  An order marked `reduce_only` will have its amount reduced to the open position.
+        If there is no open position, or if the order direction would cause an increase of the open position,
+        the order is rejected. If the order is placed in the book, it will be subsequently monitored,
+        and reduced to the open position if the position changes through other means (best effort).
+        Multiple reduce-only orders will all be reduced individually.
+        :collar:  If the instrument has a safety price collar set, and the limit price of the order
+        (infinite for market orders) is in cross with (more aggressive than) this collar, how to handle.
+        If set to `ignore`, the order will proceed as requested. If `reject`,\nthe order fails early.
+        If `clamp`, the price is adjusted to the collar.
+        The default is `clamp` for market orders and `reject` for everything else.
+        Collar `ignore` is forbidden for market orders.
+        """
         await self._send(
             "private/sell",
             id,
@@ -263,6 +390,19 @@ class Thalex:
         collar: Optional[Collar] = None,
         id: Optional[int] = None,
     ):
+        """Amend order
+
+        :client_order_id:  Exactly one of `client_order_id` or `order_id` must be specified.
+        :order_id:  Exactly one of `client_order_id` or `order_id` must be specified.
+        :price: number
+        :amount: number
+        :collar:  If the instrument has a safety price collar set, and the new limit price
+        is in cross with (more aggressive than) this collar,
+        how to handle. If set to `ignore`, the amend will proceed as requested. If `reject`,
+        the request fails early. If `clamp`, the price is adjusted to the collar.
+
+        The default is `reject`.
+        """
         await self._send(
             "private/amend",
             id,
@@ -279,6 +419,11 @@ class Thalex:
         client_order_id: Optional[int] = None,
         id: Optional[int] = None,
     ):
+        """Cancel order
+
+        :client_order_id:  Exactly one of `client_order_id` or `order_id` must be specified.
+        :order_id:  Exactly one of `client_order_id` or `order_id` must be specified.
+        """
         await self._send(
             "private/cancel",
             id,
@@ -290,6 +435,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Bulk cancel all orders
+        """
         await self._send(
             "private/cancel_all",
             id,
@@ -299,6 +446,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Bulk cancel all orders in session
+        """
         await self._send(
             "private/cancel_session",
             id,
@@ -310,6 +459,14 @@ class Thalex:
         label: Optional[str] = None,
         id: Optional[int] = None,
     ):
+        """Create a request for quote
+
+        :legs:  Specify any number of legs that you'd like to trade in a single package. Leg amounts
+        may be positive (long) or negative (short), and must adhere to the regular volume tick size for the
+        respective instrument. At least one leg must be long.
+
+        :label:  User label for this RFQ, which will be reflected in eventual trades.
+        """
         await self._send(
             "private/create_rfq", id, legs=[leg.dumps() for leg in legs], label=label
         )
@@ -319,6 +476,10 @@ class Thalex:
         rfq_id,
         id: Optional[int] = None,
     ):
+        """Cancel an RFQ
+
+        :rfq_id:  The ID of the RFQ to be cancelled
+        """
         await self._send("private/cancel_rfq", id, rfq_id=rfq_id)
 
     async def trade_rfq(
@@ -328,6 +489,15 @@ class Thalex:
         limit_price: float,
         id: Optional[int] = None,
     ):
+        """Trade an RFQ
+
+        :rfq_id:  The ID of the RFQ
+        :direction:  Whether to buy or sell. *Important*: this relates to the combination as created by the system, *not* the
+        package as originally requested (although they should be equal).
+
+        :limit_price:  The maximum (for buy) or minimum (for sell) price to trade at. This is the price for one combination, not
+        for the entire package.
+        """
         await self._send(
             "private/trade_rfq",
             id,
@@ -340,6 +510,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Open RFQs
+        """
         await self._send(
             "private/mm_rfqs",
             id,
@@ -355,6 +527,20 @@ class Thalex:
         label: Optional[str] = None,
         id: Optional[int] = None,
     ):
+        """Quote on an RFQ
+
+        :rfq_id:  The ID of the RFQ this quote is for.
+        :client_order_id:  Session-local identifier for this order. Only valid for websocket sessions. If set, must be a
+        number between 0 and 2^64-1, inclusive. When using numbers larger than 2^32, please beware of implicit
+        floating point conversions in some JSON libraries.
+
+        :direction:  The side of the quote.
+
+        :price:  Limit price for the quote (for one combination).
+        :amount:  Number of combinations to quote. Anything over the requested amount will not be visible to the requester.
+
+        :label:  A label to attach to eventual trades.
+        """
         await self._send(
             "private/mm_rfq_insert_quote",
             id,
@@ -374,6 +560,13 @@ class Thalex:
         client_order_id: Optional[int] = None,
         id: Optional[int] = None,
     ):
+        """Amend quote
+
+        :client_order_id:  Exactly one of `client_order_id` or `order_id` must be specified.
+        :order_id:  Exactly one of `client_order_id` or `order_id` must be specified.
+        :price:  Limit price for the quote (for one combination).
+        :amount:  Number of combinations to quote. Anything over the requested amount will not be visible to the requester.
+        """
         await self._send(
             "private/mm_rfq_amend_quote",
             id,
@@ -389,6 +582,11 @@ class Thalex:
         client_order_id: Optional[int] = None,
         id: Optional[int] = None,
     ):
+        """Delete quote
+
+        :client_order_id:  Exactly one of `client_order_id` or `order_id` must be specified.
+        :order_id:  Exactly one of `client_order_id` or `order_id` must be specified.
+        """
         await self._send(
             "private/mm_rfq_delete_quote",
             id,
@@ -400,6 +598,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """List of active quotes
+        """
         await self._send(
             "private/mm_rfq_quotes",
             id,
@@ -409,6 +609,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Open orders
+        """
         await self._send(
             "private/open_orders",
             id,
@@ -422,6 +624,13 @@ class Thalex:
         bookmark: Optional[str] = None,
         id: Optional[int] = None,
     ):
+        """Order history
+
+        :limit:  Max results to return.
+        :time_low:  Start time (UNIX timestamp) defaults to zero.
+        :time_high:  End time (UNIX timestamp) defaults to now.
+        :bookmark:  Set to bookmark from previous call to get next page.
+        """
         await self._send(
             "private/order_history",
             id,
@@ -439,6 +648,13 @@ class Thalex:
         bookmark: Optional[str] = None,
         id: Optional[int] = None,
     ):
+        """Trade history
+
+        :limit:  Max results to return.
+        :time_low:  Start time (UNIX timestamp) defaults to zero.
+        :time_high:  End time (UNIX timestamp) defaults to now.
+        :bookmark:  Set to bookmark from previous call to get next page.
+        """
         await self._send(
             "private/trade_history",
             id,
@@ -456,6 +672,13 @@ class Thalex:
         bookmark: Optional[str] = None,
         id: Optional[int] = None,
     ):
+        """Transaction history
+
+        :limit:  Max results to return.
+        :time_low:  Start time (UNIX timestamp) defaults to zero.
+        :time_high:  End time (UNIX timestamp) defaults to now.
+        :bookmark:  Set to bookmark from previous call to get next page.
+        """
         await self._send(
             "private/transaction_history",
             id,
@@ -473,6 +696,13 @@ class Thalex:
         bookmark: Optional[str] = None,
         id: Optional[int] = None,
     ):
+        """RFQ history
+
+        :limit:  Max results to return.
+        :time_low:  Start time (UNIX timestamp) defaults to zero.
+        :time_high:  End time (UNIX timestamp) defaults to now.
+        :bookmark:  Set to bookmark from previous call to get next page.
+        """
         await self._send(
             "private/rfq_history",
             id,
@@ -486,6 +716,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Account breakdown
+        """
         await self._send(
             "private/account_breakdown",
             id,
@@ -495,6 +727,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Account summary
+        """
         await self._send(
             "private/account_summary",
             id,
@@ -504,6 +738,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Margin breakdown
+        """
         await self._send(
             "private/required_margin_breakdown",
             id,
@@ -516,6 +752,12 @@ class Thalex:
         amount: float,
         id: Optional[int] = None,
     ):
+        """Margin breakdown with order
+
+        :instrument_name:  The name of the instrument of this hypothetical order with which the margin is to be broken down with.
+        :price:  The price of the hypothetical order.
+        :amount:  The amount that would be traded.
+        """
         await self._send(
             "private/required_margin_for_order",
             id,
@@ -525,18 +767,32 @@ class Thalex:
         )
 
     async def private_subscribe(self, channels: [str], id: Optional[int] = None):
+        """Subscribe to private channels
+
+        :channels:  List of channels to subscribe to.
+        """
         await self._send("private/subscribe", id, channels=channels)
 
     async def public_subscribe(self, channels: [str], id: Optional[int] = None):
+        """Subscribe to public channels
+
+        :channels:  List of channels to subscribe to.
+        """
         await self._send("public/subscribe", id, channels=channels)
 
     async def unsubscribe(self, channels: [str], id: Optional[int] = None):
+        """Unsubscribe
+
+        :channels:  List of channels to unsubscribe from. Public and private channels may be mixed.
+        """
         await self._send("unsubscribe", id, channels=channels)
 
     async def conditional_orders(
         self,
         id: Optional[int] = None,
     ):
+        """Conditional orders
+        """
         await self._send(
             "private/conditional_orders",
             id,
@@ -556,6 +812,19 @@ class Thalex:
         target: Optional[Target] = None,
         id: Optional[int] = None,
     ):
+        """Create conditional order
+
+        :direction: enum
+        :instrument_name: string
+        :amount: number
+        :limit_price:  If set, creates a stop limit order
+        :target:  The trigger target that `stop_price` and `bracket_price` refer to.
+        :stop_price:  Trigger price
+        :bracket_price:  If set, creates a bracket order
+        :trailing_stop_callback_rate:  If set, creates a trailing stop order
+        :label:  Label will be set on the activated order
+        :reduce_only:  Activated order will be reduce-only
+        """
         await self._send(
             "private/create_conditional_order",
             id,
@@ -576,6 +845,10 @@ class Thalex:
         order_id: Optional[int] = None,
         id: Optional[int] = None,
     ):
+        """Cancel conditional order
+
+        :order_id: string
+        """
         await self._send(
             "private/cancel_conditional_order",
             id,
@@ -586,6 +859,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Bulk cancel conditional orders
+        """
         await self._send(
             "private/cancel_all_conditional_orders",
             id,
@@ -596,6 +871,10 @@ class Thalex:
         limit: Optional[int] = None,
         id: Optional[int] = None,
     ):
+        """Notifications inbox
+
+        :limit:  Max results to return.
+        """
         await self._send("private/notifications_inbox", id, limit=limit)
 
     async def mark_inbox_notification_as_read(
@@ -604,6 +883,11 @@ class Thalex:
         read: Optional[bool] = None,
         id: Optional[int] = None,
     ):
+        """Marking notification as read
+
+        :notification_id:  ID of the notification to mark.
+        :read:  Set to `true` to mark as read, `false` to mark as not read.
+        """
         await self._send(
             "private/mark_inbox_notification_as_read",
             id,
@@ -618,6 +902,33 @@ class Thalex:
         post_only: Optional[bool] = None,
         id: Optional[int] = None,
     ):
+        """Send a mass quote
+
+        :quotes:  List of quotes (maximum 100).
+
+        Each item is a double sided quote on a single instrument. A quote atomically replace a previous quote. Both
+        bid and ask price may be specified. If either bid or ask is not specified, that side is *not* replaced or
+        removed. If a double-sided quote for an instrument that was specified in an earlier call is omitted from the next
+        call, that quote is *not* removed or replaced. To remove a quote, set the amount to zero.
+
+        To replace only some of the quotes you have, send only the quotes (sides) you need to replace.
+
+        Sending a quote with the exact same price and amount as in the previous call *will* replace the quote, which
+        will result in the quote losing priority. It is thus advised to avoid sending duplicate quotes.
+
+        Note that mass quoting only allows for a one level quote on each side on the instrument. I.e. if you specify
+        two or more double sided quotes on the same instrument then the quotes occurring earlier in the list will be
+        replaced by the quotes occurring later in the list, as if all the double sided quotes for the same instrument
+        were sent in separate API calls.
+
+        Note that market maker protection must have been configured for the instrument's product group, and both bid
+        and ask amount must not exceed the most recent protection configuration amount.
+
+        :label:  Optional user label to apply to every quote side.
+        :post_only:  If set, price may be widened so it will not cross an existing order in the book.
+        If the adjusted price for any bid falls at or below zero where not allowed, then
+        that side will be removed with delete reason 'immediate_cancel'.
+        """
         await self._send(
             "private/mass_quote", id, quotes=quotes, label=label, post_only=post_only
         )
@@ -628,6 +939,11 @@ class Thalex:
         amount: float,
         id: Optional[int] = None,
     ):
+        """Market maker protection configuration
+
+        :product:  Product group ('F' + index or 'O' + index)
+        :amount:  Amount to execute before remaining mass quotes are cancelled
+        """
         await self._send(
             "private/set_mm_protection", id, product=product, amount=amount
         )
@@ -639,6 +955,12 @@ class Thalex:
         target_address: str,
         id: Optional[int] = None,
     ):
+        """Verify if withdrawal is possible
+
+        :asset_name:  Asset name.
+        :amount:  Amount to withdraw.
+        :target_address:  Target address.
+        """
         await self._send(
             "private/verify_withdrawal",
             id,
@@ -655,6 +977,13 @@ class Thalex:
         label: Optional[str] = None,
         id: Optional[int] = None,
     ):
+        """Withdraw assets
+
+        :asset_name:  Asset name.
+        :amount:  Amount to withdraw.
+        :target_address:  Target address.
+        :label:  Optional label to attach to the withdrawal request.
+        """
         await self._send(
             "private/withdraw",
             id,
@@ -668,6 +997,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Withdrawals
+        """
         await self._send(
             "public/crypto_withdrawals",
             id,
@@ -677,6 +1008,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Deposits
+        """
         await self._send(
             "public/crypto_deposits",
             id,
@@ -686,6 +1019,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Bitcoin deposit address
+        """
         await self._send(
             "public/btc_deposit_address",
             id,
@@ -695,6 +1030,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """Ethereum deposit address
+        """
         await self._send(
             "public/eth_deposit_address",
             id,
@@ -707,6 +1044,12 @@ class Thalex:
         positions: Optional[List[Position]] = None,
         id: Optional[int] = None,
     ):
+        """Verify internal transfer
+
+        :destination_account_number:  Destination account number.
+        :assets: array
+        :positions: array
+        """
         await self._send(
             "private/verify_internal_transfer",
             id,
@@ -723,6 +1066,13 @@ class Thalex:
         label: Optional[str] = None,
         id: Optional[int] = None,
     ):
+        """Internal transfer
+
+        :destination_account_number:  Destination account number.
+        :assets: array
+        :positions: array
+        :label:  Optional label attached to the transfer.
+        """
         await self._send(
             "private/internal_transfer",
             id,
@@ -736,6 +1086,8 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
+        """System info
+        """
         await self._send(
             "public/system_info",
             id,
