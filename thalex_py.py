@@ -1,8 +1,19 @@
 import enum
 import json
+import jwt
+import time
 from typing import Optional, List
 
 import websockets
+
+
+def make_auth_token(kid, private_key):
+    return jwt.encode(
+        {"iat": time.time()},
+        private_key,
+        algorithm="RS512",
+        headers={"kid": kid},
+    )
 
 
 class Network(enum.Enum):
