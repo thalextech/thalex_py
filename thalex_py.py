@@ -1,5 +1,7 @@
 import enum
 import json
+import logging
+
 import jwt
 import time
 from typing import Optional, List
@@ -17,6 +19,8 @@ def make_auth_token(kid, private_key):
 
 
 class Network(enum.Enum):
+    LOCAL = "ws://127.0.0.1:8080/ws/api/v2"
+    DEV = "wss://dev.thalex.systems/ws/api/v2"
     TEST = "wss://testnet.thalex.com/ws/api/v2"
     PROD = "wss://thalex.com/ws/api/v2"
 
@@ -123,6 +127,9 @@ class Thalex:
     async def connect(self):
         self.ws = await websockets.connect(self.net.value, ping_interval=200)
 
+    async def disconnect(self):
+        await self.ws.close()
+
     async def _send(self, method: str, id: Optional[int], **kwargs):
         request = {"method": method, "params": {}}
         if id is not None:
@@ -131,6 +138,7 @@ class Thalex:
             if value is not None:
                 request["params"][key] = value
         request = json.dumps(request)
+        logging.debug(f"Sending {request=}")
         await self.ws.send(request)
 
     async def login(
@@ -163,13 +171,11 @@ class Thalex:
         )
 
     async def instruments(self, id: Optional[int] = None):
-        """Active instruments
-        """
+        """Active instruments"""
         await self._send("public/instruments", id)
 
     async def all_instruments(self, id: Optional[int] = None):
-        """All instruments
-        """
+        """All instruments"""
         await self._send("public/all_instruments", id)
 
     async def instrument(self, instrument_name: str, id: Optional[int] = None):
@@ -258,8 +264,8 @@ class Thalex:
             client_order_id=client_order_id,
             price=price,
             label=label,
-            order_type=order_type.value,
-            time_in_force=time_in_force.value,
+            order_type=order_type.value if order_type is not None else None,
+            time_in_force=time_in_force.value if time_in_force is not None else None,
             post_only=post_only,
             reject_post_only=reject_post_only,
             reduce_only=reduce_only,
@@ -321,8 +327,8 @@ class Thalex:
             client_order_id=client_order_id,
             price=price,
             label=label,
-            order_type=order_type.value,
-            time_in_force=time_in_force.value,
+            order_type=order_type.value if order_type is not None else None,
+            time_in_force=time_in_force.value if time_in_force is not None else None,
             post_only=post_only,
             reject_post_only=reject_post_only,
             reduce_only=reduce_only,
@@ -384,8 +390,8 @@ class Thalex:
             client_order_id=client_order_id,
             price=price,
             label=label,
-            order_type=order_type.value,
-            time_in_force=time_in_force.value,
+            order_type=order_type.value if order_type is not None else None,
+            time_in_force=time_in_force.value if time_in_force is not None else None,
             post_only=post_only,
             reject_post_only=reject_post_only,
             reduce_only=reduce_only,
@@ -396,8 +402,8 @@ class Thalex:
         self,
         amount: float,
         price: float,
-        order_id: Optional[int] = None,
-        client_order_id: Optional[int] = None,
+        order_id: Optional[str] = None,
+        client_order_id: Optional[str] = None,
         collar: Optional[Collar] = None,
         id: Optional[int] = None,
     ):
@@ -426,8 +432,8 @@ class Thalex:
 
     async def cancel(
         self,
-        order_id: Optional[int] = None,
-        client_order_id: Optional[int] = None,
+        order_id: Optional[str] = None,
+        client_order_id: Optional[str] = None,
         id: Optional[int] = None,
     ):
         """Cancel order
@@ -446,8 +452,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Bulk cancel all orders
-        """
+        """Bulk cancel all orders"""
         await self._send(
             "private/cancel_all",
             id,
@@ -457,8 +462,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Bulk cancel all orders in session
-        """
+        """Bulk cancel all orders in session"""
         await self._send(
             "private/cancel_session",
             id,
@@ -521,8 +525,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Open RFQs
-        """
+        """Open RFQs"""
         await self._send(
             "private/mm_rfqs",
             id,
@@ -609,8 +612,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """List of active quotes
-        """
+        """List of active quotes"""
         await self._send(
             "private/mm_rfq_quotes",
             id,
@@ -620,8 +622,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Open orders
-        """
+        """Open orders"""
         await self._send(
             "private/open_orders",
             id,
@@ -727,8 +728,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Account breakdown
-        """
+        """Account breakdown"""
         await self._send(
             "private/account_breakdown",
             id,
@@ -738,8 +738,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Account summary
-        """
+        """Account summary"""
         await self._send(
             "private/account_summary",
             id,
@@ -749,8 +748,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Margin breakdown
-        """
+        """Margin breakdown"""
         await self._send(
             "private/required_margin_breakdown",
             id,
@@ -802,8 +800,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Conditional orders
-        """
+        """Conditional orders"""
         await self._send(
             "private/conditional_orders",
             id,
@@ -870,8 +867,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Bulk cancel conditional orders
-        """
+        """Bulk cancel conditional orders"""
         await self._send(
             "private/cancel_all_conditional_orders",
             id,
@@ -1008,8 +1004,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Withdrawals
-        """
+        """Withdrawals"""
         await self._send(
             "public/crypto_withdrawals",
             id,
@@ -1019,8 +1014,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Deposits
-        """
+        """Deposits"""
         await self._send(
             "public/crypto_deposits",
             id,
@@ -1030,8 +1024,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Bitcoin deposit address
-        """
+        """Bitcoin deposit address"""
         await self._send(
             "public/btc_deposit_address",
             id,
@@ -1041,8 +1034,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """Ethereum deposit address
-        """
+        """Ethereum deposit address"""
         await self._send(
             "public/eth_deposit_address",
             id,
@@ -1097,8 +1089,7 @@ class Thalex:
         self,
         id: Optional[int] = None,
     ):
-        """System info
-        """
+        """System info"""
         await self._send(
             "public/system_info",
             id,

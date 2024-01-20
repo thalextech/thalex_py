@@ -1,42 +1,60 @@
+import argparse
 import asyncio
+import logging
+import sys
+from signal import SIGINT, SIGTERM
+
 import thalex_py
+import example_trader
 
 
-private_key = """-----BEGIN RSA PRIVATE KEY-----
-...
------END RSA PRIVATE KEY-----
-"""
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+)
+
+parser = argparse.ArgumentParser(
+    description="replicator",
+)
+
+parser.add_argument("--network", default="test", metavar="CSTR")
+parser.add_argument("--log", default="info", metavar="CSTR")
+args = parser.parse_args(sys.argv[1:])
+if args.network == "prod":
+    network = thalex_py.Network.PROD
+if args.network == "test":
+    network = thalex_py.Network.TEST
 
 
-kid = "K123456798"
-
-async def sub(th):
-    token = thalex_py.make_auth_token(kid, private_key)
-    await th.login(token)
-    await th.private_subscribe(["account.orders"])
-    # await th.public_subscribe(["book.BTC-PERPETUAL.none.all.100ms"])
-    # await th.instruments()
-    # await th.instrument("ETH-PERPETUAL", 7)
-    # await th.login(token="asd", account="acc")
-    # leg1 = thalex_py.RfqLeg(instrument_name="asd", amount=8)
-    # leg2 = thalex_py.RfqLeg(instrument_name="bbq", amount=6)
-    # legs = [leg1, leg2]
-    # await th.create_rfq(legs, label="eminem")
-
-
-async def listen(th):
-    while True:
-        r = await th.receive()
-        print(r)
-
+if args.log == "debug":
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+    )
+else:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+    )
+logging.debug("yo")
+logging.info("yo")
 
 async def main():
-    th = thalex_py.Thalex(network=thalex_py.Network.TEST)
-    await th.connect()
-    listen_task = asyncio.create_task(listen(th))
-    trade_task = asyncio.create_task(sub(th))
-    await asyncio.wait([listen_task, trade_task])
+    try:
+        thalex = thalex_py.Thalex(network=thalex_py.Network.TEST)
+        await thalex.connect()
+        trader = example_trader.Trader(thalex, network)
+        await asyncio.gather(trader.listen_task(), trader.start_trading())
+    finally:
+        await thalex.cancel_all()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    main_task = asyncio.ensure_future(main())
+    for signal in [SIGINT, SIGTERM]:
+        loop.add_signal_handler(signal, main_task.cancel)
+    try:
+        loop.run_until_complete(main_task)
+    finally:
+        loop.close()
