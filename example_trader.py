@@ -15,12 +15,13 @@ CALL_ID_INSERT_AMEND = 3
 CALL_ID_LOGIN = 4
 CALL_ID_CANCEL_ALL = 5
 
-NUMBER_OF_EXPIRIES = 1
+NUMBER_OF_EXPIRIES_TO_QUOTE = 1
 SUBSCRIBE_INTERVAL = "1000ms"
-DELTA_RANGE_TO_QUOTE = (0.4, 0.6)
+DELTA_RANGE_to_QUOTE = (0.4, 0.6)
 BASE_SPREAD = 50
 SCALE_FACTOR = 0.5
 LOTS = 0.1
+AMEND_THRESHOLD = 3  # in ticks
 
 
 class InstrumentType(enum.Enum):
@@ -55,6 +56,7 @@ class Order:
         self.instrument = data["instrument_name"]
         self.direction = thalex_py.Direction(data["direction"])
         self.status = OrderStatus(data["status"])
+        self.price = data["price"]
 
 
 class Ticker:
@@ -98,9 +100,9 @@ class Trader:
             instrument = self.instruments.get(instrument_name)
             if (
                 instrument.type == InstrumentType.OPTION
-                and DELTA_RANGE_TO_QUOTE[0]
+                and DELTA_RANGE_to_QUOTE[0]
                 <= abs(ticker.delta)
-                <= DELTA_RANGE_TO_QUOTE[1]
+                <= DELTA_RANGE_to_QUOTE[1]
             ):
                 dynamic_spread = max(BASE_SPREAD, ticker.mark_price * SCALE_FACTOR)
 
@@ -111,12 +113,8 @@ class Trader:
                     bid = self.round_to_nearest(bid, 5)
                     ask = self.round_to_nearest(ask, 5)
                 if bid > 0:
-                    await self.insert_or_amend(
-                        instrument_name, bid, thalex_py.Direction.BUY
-                    )
-                await self.insert_or_amend(
-                    instrument_name, ask, thalex_py.Direction.SELL
-                )
+                    await self.insert_or_amend(instrument, bid, thalex_py.Direction.BUY)
+                await self.insert_or_amend(instrument, ask, thalex_py.Direction.SELL)
 
     async def cancel_orders(self, instrument_name):
         orders = self.orders.get(instrument_name)
@@ -132,18 +130,22 @@ class Trader:
     async def insert_or_amend(self, instrument, price, side):
         try:
             side_idx = 0 if side == thalex_py.Direction.BUY else 1
-            current_order = self.orders.get(instrument, [None, None])[side_idx]
-            if current_order and current_order.status == OrderStatus.OPEN:
-                await self.thalex.amend(
-                    amount=LOTS,
-                    price=price,
-                    order_id=current_order.id,
-                    id=CALL_ID_INSERT_AMEND,
-                )
+            current_order = self.orders.get(instrument.name, [None, None])[side_idx]
+            if current_order is not None and current_order.status == OrderStatus.OPEN:
+                if (
+                    abs(current_order.price - price)
+                    > AMEND_THRESHOLD * instrument.tick_size
+                ):
+                    await self.thalex.amend(
+                        amount=LOTS,
+                        price=price,
+                        order_id=current_order.id,
+                        id=CALL_ID_INSERT_AMEND,
+                    )
             else:
                 await self.thalex.insert(
                     direction=side,
-                    instrument_name=instrument,
+                    instrument_name=instrument.name,
                     amount=LOTS,
                     price=price,
                     post_only=True,
@@ -196,7 +198,7 @@ class Trader:
         ]
         expiries = [i.expiry_ts for i in instruments if i.type == InstrumentType.OPTION]
         expiries.sort()
-        expiries = expiries[:NUMBER_OF_EXPIRIES]
+        expiries = expiries[:NUMBER_OF_EXPIRIES_TO_QUOTE]
         for i in instruments:
             if i.expiry_ts in expiries:
                 self.instruments[i.name] = i
