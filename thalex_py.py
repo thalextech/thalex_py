@@ -19,8 +19,6 @@ def make_auth_token(kid, private_key):
 
 
 class Network(enum.Enum):
-    LOCAL = "ws://127.0.0.1:8080/ws/api/v2"
-    DEV = "wss://dev.thalex.systems/ws/api/v2"
     TEST = "wss://testnet.thalex.com/ws/api/v2"
     PROD = "wss://thalex.com/ws/api/v2"
 
