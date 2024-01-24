@@ -10,6 +10,7 @@ class Channel(enum.Enum):
     BOOK = "book."
     RECENT_TRADES = "recent_trades."
     ORDERS = "account.orders"
+    TRADE_HISTORY = "account.trade_history"
 
 
 def _get_channel(full_channel: str) -> Optional[Channel]:
@@ -73,6 +74,8 @@ class Processor:
                 await self.result_callback(msg["result"], msg["id"])
             else:
                 logging.info("No callback for result")
+        else:
+            logging.error(msg)
 
     async def process_sub(self, msg: Dict):
         try:
