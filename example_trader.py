@@ -9,6 +9,7 @@ import os
 from typing import Dict, Optional, List
 
 import keys
+
 # private_keys = {
 #     thalex_py.Network.TEST: """-----BEGIN RSA PRIVATE KEY-----
 # ...
@@ -43,6 +44,7 @@ SCALE_FACTOR = 0.1
 BTC_LOTS = 0.1
 ETH_LOTS = 1
 AMEND_THRESHOLD = 3  # in ticks
+RETREAT = 0.5  # tick size * position / lots
 
 
 class InstrumentType(enum.Enum):
@@ -116,6 +118,7 @@ class InstrumentData:
         self.quote_prices: List[Optional[float]] = [None, None]  # [bid, ask]
         self.prices_sent: List[Optional[float]] = [None, None]  # [bid, ask]
         self.orders: List[Optional[Order]] = [None, None]  # [bid, ask]
+        self.position: float = 0.0
 
 
 def pricing(i: InstrumentData) -> [float, float]:  # [bid, ask]
@@ -126,11 +129,15 @@ def pricing(i: InstrumentData) -> [float, float]:  # [bid, ask]
     ):
         return [None, None]
 
+    lots = BTC_LOTS if i.instrument.underlying == "BTCUSD" else ETH_LOTS
+    retreat = RETREAT * i.instrument.tick_size * i.position / lots
     spread = max(BASE_SPREAD, i.ticker.mark_price * SCALE_FACTOR)
-    bid = round_to_tick(i.ticker.mark_price - spread, i.instrument.tick_size)
+    bid = i.ticker.mark_price - spread - retreat
+    ask = i.ticker.mark_price + spread - retreat
+    bid = round_to_tick(bid, i.instrument.tick_size)
     if bid < i.instrument.tick_size:
         bid = None
-    ask = round_to_tick(i.ticker.mark_price + spread, i.instrument.tick_size)
+    ask = round_to_tick(ask, i.instrument.tick_size)
     return [bid, ask]
 
 
@@ -166,11 +173,15 @@ class Trader:
         self.processor.add_callback(
             process_msg.Channel.TRADE_HISTORY, self.trades_callback
         )
+        self.processor.add_callback(
+            process_msg.Channel.PORTFOLIO, self.portfolio_callback
+        )
         self.processor.add_result_callback(self.result_callback)
         self.processor.add_error_callback(self.error_callback)
         await self.thalex.instruments(CALL_ID_INSTRUMENTS)
         await self.thalex.private_subscribe(
-            ["account.orders", "account.trade_history"], CALL_ID_SUBSCRIBE
+            ["account.orders", "account.trade_history", "account.portfolio"],
+            CALL_ID_SUBSCRIBE,
         )
         while True:
             await self.hedge_deltas()
@@ -189,7 +200,7 @@ class Trader:
                 if sent is not None:
                     i.prices_sent[idx] = None
                     client_order_id = i.orders[idx].id
-                    logging.info(
+                    logging.debug(
                         f"Cancel {client_order_id} {i.instrument.name} {side.value}"
                     )
                     await self.thalex.cancel(
@@ -204,7 +215,7 @@ class Trader:
                     i.orders[idx] = Order(client_order_id, price, side)
                 else:
                     client_order_id = i.orders[idx].id
-                logging.info(
+                logging.debug(
                     f"Insert {client_order_id} {i.instrument.name} {side.value} {price}"
                 )
                 await self.thalex.insert(
@@ -219,7 +230,7 @@ class Trader:
             elif abs(price - sent) >= AMEND_THRESHOLD * i.instrument.tick_size:
                 i.prices_sent[idx] = price
                 client_order_id = i.orders[idx].id
-                logging.info(
+                logging.debug(
                     f"Amend {client_order_id} {i.instrument.name} {side.value} {price}"
                 )
                 await self.thalex.amend(
@@ -261,6 +272,10 @@ class Trader:
 
     async def book_callback(self, channel, book):
         logging.info(f"{channel}: {book}")
+
+    async def portfolio_callback(self, _, portfolio):
+        for position in portfolio:
+            self.options[position["instrument_name"]].position = position["position"]
 
     async def trades_callback(self, _, trades):
         for t in trades:
