@@ -1,6 +1,11 @@
-import asyncio
 import enum
+import argparse
+import asyncio
+import json
 import logging
+import sys
+import signal
+import os
 from typing import Dict, Optional, List
 
 import keys
@@ -33,7 +38,7 @@ CALL_ID_CANCEL_ALL = 5
 
 NUMBER_OF_EXPIRIES_TO_QUOTE = 1
 SUBSCRIBE_INTERVAL = "1000ms"
-DELTA_RANGE_to_QUOTE = (0.02, 0.75)
+DELTA_RANGE_TO_QUOTE = (0.02, 0.75)
 BASE_SPREAD = 5.0
 SCALE_FACTOR = 0.1
 BTC_LOTS = 0.1
@@ -72,14 +77,21 @@ def is_option(instrument_name: str):
 
 
 class Order:
-    def __init__(self, data: Dict):
-        self.id: str = data["order_id"]
-        self.instrument: str = data["instrument_name"]
-        self.direction = thalex_py.Direction(data["direction"])
+    def __init__(self, id: int, price: float, side:thalex_py.Direction):
+        self.id: int = id
+        self.price: float = price
+        self.side: thalex_py.Direction = side
+        self.status: Optional[OrderStatus] = None
+
+    def update(self, data: Dict):
         self.status = OrderStatus(data["status"])
         self.price = data.get(
-            "price", 0 if self.direction == thalex_py.Direction.SELL else float("inf")
+            "price", 0 if self.side == thalex_py.Direction.SELL else float("inf")
         )
+
+    def __repr__(self):
+        st = "None" if self.status is None else self.status.value
+        return f"Order({self.id=}, {self.price=}, side={self.side.value}, status={st})"
 
 
 class Trade:
@@ -110,8 +122,8 @@ class InstrumentData:
 def pricing(i: InstrumentData) -> [float, float]:  # [bid, ask]
     if (
         i.instrument.type != InstrumentType.OPTION
-        or abs(i.ticker.delta) < DELTA_RANGE_to_QUOTE[0]
-        or DELTA_RANGE_to_QUOTE[1] < abs(i.ticker.delta)
+        or abs(i.ticker.delta) < DELTA_RANGE_TO_QUOTE[0]
+        or DELTA_RANGE_TO_QUOTE[1] < abs(i.ticker.delta)
     ):
         return [None, None]
 
@@ -121,47 +133,6 @@ def pricing(i: InstrumentData) -> [float, float]:  # [bid, ask]
         bid = None
     ask = round_to_tick(i.ticker.mark_price + spread, i.instrument.tick_size)
     return [bid, ask]
-
-
-async def adjust_quotes(thalex: thalex_py.Thalex, i: InstrumentData):
-    i.quote_prices = pricing(i)
-    amount = BTC_LOTS if i.instrument.underlying == "BTCUSD" else ETH_LOTS
-    for idx, side in [(0, thalex_py.Direction.BUY), (1, thalex_py.Direction.SELL)]:
-        price = i.quote_prices[idx]
-        sent = i.prices_sent[idx]
-        if price is None:
-            if sent is not None:
-                if i.orders[idx] is None:
-                    # FIXME we'd want to amend, but we don't have the order id yet
-                    # start using client order ids maybe
-                    continue
-                i.prices_sent[idx] = None
-                await thalex.cancel(
-                    order_id=i.orders[idx].id,
-                    id=CALL_ID_TRADE,
-                )
-        elif sent is None:
-            i.prices_sent[idx] = price
-            await thalex.insert(
-                direction=side,
-                instrument_name=i.instrument.name,
-                amount=amount,
-                price=price,
-                post_only=True,
-                id=CALL_ID_TRADE,
-            )
-        elif abs(price - sent) >= AMEND_THRESHOLD * i.instrument.tick_size:
-            if i.orders[idx] is None:
-                # FIXME we'd want to amend, but we don't have the order id yet
-                # start using client order ids maybe
-                continue
-            i.prices_sent[idx] = price
-            await thalex.amend(
-                amount=amount,
-                price=price,
-                order_id=i.orders[idx].id,
-                id=CALL_ID_TRADE,
-            )
 
 
 def side_idx(side: thalex_py.Direction):
@@ -179,14 +150,16 @@ class Trader:
         self.options: Dict[str, InstrumentData] = {}
         self.futures: Dict[str, Instrument] = {}
         self.processor = process_msg.Processor()
-        self.orders: Dict[str, List[Optional[Order]]] = {}  # [bid, ask]
         self.eligible_instruments = set()
+        self.client_order_id = 0
 
-    async def start_trading(self):
+    async def hedge_task(self):
+        await self.thalex.connect()
         token = thalex_py.make_auth_token(
             keys.key_ids[self.network], keys.private_keys[self.network]
         )
         await self.thalex.login(token, id=CALL_ID_LOGIN)
+        await self.thalex.set_cancel_on_disconnect(6)
         self.processor.add_callback(process_msg.Channel.LWT, self.lwt_callback)
         self.processor.add_callback(process_msg.Channel.TICKER, self.ticker_callback)
         self.processor.add_callback(process_msg.Channel.BOOK, self.book_callback)
@@ -206,15 +179,45 @@ class Trader:
     async def hedge_deltas(self):
         pass
 
-    async def cancel_orders(self, instrument_name):
-        orders = self.orders.get(instrument_name)
-        if orders:
-            for order in orders:
-                if order is not None:
-                    await self.thalex.cancel(order.id)
-                    logging.debug(f"Canceled order for {instrument_name}")
+    async def adjust_quotes(self, i: InstrumentData):
+        i.quote_prices = pricing(i)
+        amount = BTC_LOTS if i.instrument.underlying == "BTCUSD" else ETH_LOTS
+        for idx, side in [(0, thalex_py.Direction.BUY), (1, thalex_py.Direction.SELL)]:
+            price = i.quote_prices[idx]
+            sent = i.prices_sent[idx]
+            if price is None:
+                if sent is not None:
+                    i.prices_sent[idx] = None
+                    await self.thalex.cancel(
+                        client_order_id=i.orders[idx].id,
+                        id=CALL_ID_TRADE,
+                    )
+            elif sent is None:
+                i.prices_sent[idx] = price
+                client_order_id = self.client_order_id
+                self.client_order_id = self.client_order_id + 1
+                i.orders[idx] = Order(client_order_id, price, side)
+                await self.thalex.insert(
+                    direction=side,
+                    instrument_name=i.instrument.name,
+                    amount=amount,
+                    price=price,
+                    post_only=True,
+                    client_order_id=client_order_id,
+                    id=CALL_ID_TRADE,
+                )
+            elif abs(price - sent) >= AMEND_THRESHOLD * i.instrument.tick_size:
+                i.prices_sent[idx] = price
+                await self.thalex.amend(
+                    amount=amount,
+                    price=price,
+                    client_order_id=i.orders[idx].id,
+                    id=CALL_ID_TRADE,
+                )
 
     async def listen_task(self):
+        while not self.thalex.connected():
+            await asyncio.sleep(0.5)
         while True:
             msg = await self.thalex.receive()
             await self.processor.process_msg(msg)
@@ -227,7 +230,7 @@ class Trader:
         if is_option(iname):
             i = self.options[iname]
             i.ticker = Ticker(ticker)
-            await adjust_quotes(self.thalex, i)
+            await self.adjust_quotes(i)
 
     async def book_callback(self, channel, book):
         logging.info(f"{channel}: {book}")
@@ -241,10 +244,8 @@ class Trader:
 
     async def orders_callback(self, _, orders):
         for o in orders:
-            order = Order(o)
-            if is_option(order.instrument):
-                idx = side_idx(order.direction)
-                self.options[order.instrument].orders[idx] = order
+            i = self.options[o["instrument_name"]]
+            i.orders[side_idx(thalex_py.Direction(o["direction"]))].update(o)
 
     async def result_callback(self, result, id=None):
         if id == CALL_ID_INSTRUMENTS:
@@ -260,7 +261,7 @@ class Trader:
 
     async def process_instruments(self, instruments):
         instruments = [Instrument(i) for i in instruments]
-        expiries = [i.expiry_ts for i in instruments if i.type == InstrumentType.FUTURE]
+        expiries = list(set([i.expiry_ts for i in instruments if i.type == InstrumentType.OPTION]))
         expiries.sort()
         expiries = expiries[:NUMBER_OF_EXPIRIES_TO_QUOTE]
         for i in instruments:
@@ -274,3 +275,67 @@ class Trader:
             for opt in self.options.values()
         ]
         await self.thalex.public_subscribe(subs, CALL_ID_SUBSCRIBE)
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+)
+
+parser = argparse.ArgumentParser(
+    description="thalex example trader",
+)
+
+parser.add_argument("--network", default="test", metavar="CSTR")
+parser.add_argument("--log", default="info", metavar="CSTR")
+args = parser.parse_args(sys.argv[1:])
+if args.network == "prod":
+    network = thalex_py.Network.PROD
+elif args.network == "test":
+    network = thalex_py.Network.TEST
+
+
+if args.log == "debug":
+    logging.getLogger().setLevel(logging.DEBUG)
+else:
+    logging.getLogger().setLevel(logging.INFO)
+
+
+async def main():
+    thalex = thalex_py.Thalex(network=network)
+    trader = Trader(thalex, network)
+    try:
+        await asyncio.gather(trader.listen_task(), trader.hedge_task())
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await asyncio.sleep(0.2)
+        await thalex.cancel_all(id=CALL_ID_CANCEL_ALL)
+        while True:
+            r = await thalex.receive()
+            r = json.loads(r)
+            if r.get("id", -1) == CALL_ID_CANCEL_ALL:
+                logging.info(f"Cancelled all {r.get('result', 0)} orders")
+                break
+        await thalex.disconnect()
+        logging.info("disconnected")
+
+
+def handle_signal(loop, task):
+    logging.info("Signal received, stopping...")
+    loop.remove_signal_handler(signal.SIGTERM)
+    loop.remove_signal_handler(signal.SIGINT)
+    task.cancel()
+
+
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    main_task = loop.create_task(main())
+
+    if os.name != "nt":  # Non-Windows platforms
+        loop.add_signal_handler(signal.SIGTERM, handle_signal, loop, main_task)
+        loop.add_signal_handler(signal.SIGINT, handle_signal, loop, main_task)
+    try:
+        loop.run_until_complete(main_task)
+    finally:
+        loop.close()

@@ -82,7 +82,7 @@ class Quote:
 
     def dumps(self):
         d = {"i": self.i}
-        if self.d is not None:
+        if self.b is not None:
             d["b"] = self.b.dumps()
         if self.a is not None:
             d["a"] = self.a.dumps()
@@ -122,8 +122,11 @@ class Thalex:
     async def receive(self):
         return await self.ws.recv()
 
+    def connected(self):
+        return self.ws is not None
+
     async def connect(self):
-        self.ws = await websockets.connect(self.net.value, ping_interval=200)
+        self.ws = await websockets.connect(self.net.value, ping_interval=5)
 
     async def disconnect(self):
         await self.ws.close()
@@ -156,7 +159,7 @@ class Thalex:
         )
 
     async def set_cancel_on_disconnect(
-        self, timeout_secs: Optional[int] = None, id: Optional[int] = None
+        self, timeout_secs: int, id: Optional[int] = None
     ):
         """Set cancel on disconnect
 
@@ -401,7 +404,7 @@ class Thalex:
         amount: float,
         price: float,
         order_id: Optional[str] = None,
-        client_order_id: Optional[str] = None,
+        client_order_id: Optional[int] = None,
         collar: Optional[Collar] = None,
         id: Optional[int] = None,
     ):
@@ -431,7 +434,7 @@ class Thalex:
     async def cancel(
         self,
         order_id: Optional[str] = None,
-        client_order_id: Optional[str] = None,
+        client_order_id: Optional[int] = None,
         id: Optional[int] = None,
     ):
         """Cancel order

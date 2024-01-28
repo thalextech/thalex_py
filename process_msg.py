@@ -11,6 +11,7 @@ class Channel(enum.Enum):
     RECENT_TRADES = "recent_trades."
     ORDERS = "account.orders"
     TRADE_HISTORY = "account.trade_history"
+    INSTRUMENTS = "instruments"
 
 
 def _get_channel(full_channel: str) -> Optional[Channel]:
