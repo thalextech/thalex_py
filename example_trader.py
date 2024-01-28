@@ -32,9 +32,8 @@ import thalex_py
 CALL_ID_INSTRUMENTS = 0
 CALL_ID_INSTRUMENT = 1
 CALL_ID_SUBSCRIBE = 2
-CALL_ID_TRADE = 3
-CALL_ID_LOGIN = 4
-CALL_ID_CANCEL_ALL = 5
+CALL_ID_LOGIN = 3
+CALL_ID_CANCEL_ALL = 4
 
 NUMBER_OF_EXPIRIES_TO_QUOTE = 1
 SUBSCRIBE_INTERVAL = "1000ms"
@@ -77,7 +76,7 @@ def is_option(instrument_name: str):
 
 
 class Order:
-    def __init__(self, id: int, price: float, side:thalex_py.Direction):
+    def __init__(self, id: int, price: float, side: thalex_py.Direction):
         self.id: int = id
         self.price: float = price
         self.side: thalex_py.Direction = side
@@ -168,6 +167,7 @@ class Trader:
             process_msg.Channel.TRADE_HISTORY, self.trades_callback
         )
         self.processor.add_result_callback(self.result_callback)
+        self.processor.add_error_callback(self.error_callback)
         await self.thalex.instruments(CALL_ID_INSTRUMENTS)
         await self.thalex.private_subscribe(
             ["account.orders", "account.trade_history"], CALL_ID_SUBSCRIBE
@@ -188,15 +188,25 @@ class Trader:
             if price is None:
                 if sent is not None:
                     i.prices_sent[idx] = None
+                    client_order_id = i.orders[idx].id
+                    logging.info(
+                        f"Cancel {client_order_id} {i.instrument.name} {side.value}"
+                    )
                     await self.thalex.cancel(
-                        client_order_id=i.orders[idx].id,
-                        id=CALL_ID_TRADE,
+                        client_order_id=client_order_id,
+                        id=100 + client_order_id,
                     )
             elif sent is None:
                 i.prices_sent[idx] = price
-                client_order_id = self.client_order_id
-                self.client_order_id = self.client_order_id + 1
-                i.orders[idx] = Order(client_order_id, price, side)
+                if i.orders[idx] is None:
+                    client_order_id = self.client_order_id
+                    self.client_order_id = self.client_order_id + 1
+                    i.orders[idx] = Order(client_order_id, price, side)
+                else:
+                    client_order_id = i.orders[idx].id
+                logging.info(
+                    f"Insert {client_order_id} {i.instrument.name} {side.value} {price}"
+                )
                 await self.thalex.insert(
                     direction=side,
                     instrument_name=i.instrument.name,
@@ -204,16 +214,33 @@ class Trader:
                     price=price,
                     post_only=True,
                     client_order_id=client_order_id,
-                    id=CALL_ID_TRADE,
+                    id=100 + client_order_id,
                 )
             elif abs(price - sent) >= AMEND_THRESHOLD * i.instrument.tick_size:
                 i.prices_sent[idx] = price
+                client_order_id = i.orders[idx].id
+                logging.info(
+                    f"Amend {client_order_id} {i.instrument.name} {side.value} {price}"
+                )
                 await self.thalex.amend(
                     amount=amount,
                     price=price,
-                    client_order_id=i.orders[idx].id,
-                    id=CALL_ID_TRADE,
+                    client_order_id=client_order_id,
+                    id=100 + client_order_id,
                 )
+
+    async def handle_throttled(self, oid):
+        logging.warning(f"Throttled request for order: {oid}")
+        await asyncio.sleep(0.1)
+        for iname, idata in self.options.items():
+            for order in idata.orders:
+                if order is not None and order.id == oid:
+                    if order.status is None:
+                        # order not yet confirmed on the exchange,
+                        # so it was an insert that got throttled
+                        idata.prices_sent[side_idx(order.side)] = None
+                    await self.adjust_quotes(idata)
+                    return
 
     async def listen_task(self):
         while not self.thalex.connected():
@@ -252,16 +279,24 @@ class Trader:
             await self.process_instruments(result)
         elif id == CALL_ID_SUBSCRIBE:
             logging.debug(f"subscribe result: {result}")
-        elif id == CALL_ID_TRADE:
+        elif id is not None and id > 99:
             logging.debug(f"Adjust order result: {result}")
         elif id == CALL_ID_LOGIN:
             logging.info(f"login result: {result}")
         else:
             logging.info(result)
 
+    async def error_callback(self, error, id=None):
+        if id is not None and id > 99 and error["code"] == 4:
+            await self.handle_throttled(id - 100)
+        else:
+            logging.error(f"error: {error}")
+
     async def process_instruments(self, instruments):
         instruments = [Instrument(i) for i in instruments]
-        expiries = list(set([i.expiry_ts for i in instruments if i.type == InstrumentType.OPTION]))
+        expiries = list(
+            set([i.expiry_ts for i in instruments if i.type == InstrumentType.OPTION])
+        )
         expiries.sort()
         expiries = expiries[:NUMBER_OF_EXPIRIES_TO_QUOTE]
         for i in instruments:

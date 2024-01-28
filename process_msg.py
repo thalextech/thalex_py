@@ -57,6 +57,7 @@ def _process_book(book: List, is_snapshot: bool, notification: Dict):
 class Processor:
     def __init__(self):
         self.result_callback: callable = None
+        self.error_callback: callable = None
         self.callbacks: Dict[str, callable] = {}
         self.books: Dict[str, List] = {}
 
@@ -65,6 +66,9 @@ class Processor:
 
     def add_result_callback(self, callback: callable):
         self.result_callback = callback
+
+    def add_error_callback(self, callback: callable):
+        self.error_callback = callback
 
     async def process_msg(self, msg: str):
         msg = json.loads(msg)
@@ -76,7 +80,10 @@ class Processor:
             else:
                 logging.info("No callback for result")
         else:
-            logging.error(msg)
+            if self.error_callback is not None:
+                await self.error_callback(msg["error"], msg["id"])
+            else:
+                logging.error(msg)
 
     async def process_sub(self, msg: Dict):
         try:
