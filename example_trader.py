@@ -45,6 +45,7 @@ BTC_LOTS = 0.1
 ETH_LOTS = 1
 AMEND_THRESHOLD = 3  # in ticks
 RETREAT = 0.5  # tick size * position / lots
+MAX_MARGIN = 5000
 
 
 class InstrumentType(enum.Enum):
@@ -121,12 +122,14 @@ class InstrumentData:
         self.position: float = 0.0
 
 
-def pricing(i: InstrumentData) -> [float, float]:  # [bid, ask]
+def pricing(i: InstrumentData, reduce_only: bool) -> [float, float]:  # [bid, ask]
     if (
         i.instrument.type != InstrumentType.OPTION
         or abs(i.ticker.delta) < DELTA_RANGE_TO_QUOTE[0]
         or DELTA_RANGE_TO_QUOTE[1] < abs(i.ticker.delta)
     ):
+        return [None, None]
+    if reduce_only and i.position == 0:
         return [None, None]
 
     lots = BTC_LOTS if i.instrument.underlying == "BTCUSD" else ETH_LOTS
@@ -138,6 +141,10 @@ def pricing(i: InstrumentData) -> [float, float]:  # [bid, ask]
     if bid < i.instrument.tick_size:
         bid = None
     ask = round_to_tick(ask, i.instrument.tick_size)
+    if reduce_only and i.position > 0:
+        bid = None
+    if reduce_only and i.position < 0:
+        ask = None
     return [bid, ask]
 
 
@@ -157,7 +164,8 @@ class Trader:
         self.futures: Dict[str, Instrument] = {}
         self.processor = process_msg.Processor()
         self.eligible_instruments = set()
-        self.client_order_id = 0
+        self.client_order_id: int = 0
+        self.required_margin: float = 0.0
 
     async def hedge_task(self):
         await self.thalex.connect()
@@ -176,11 +184,19 @@ class Trader:
         self.processor.add_callback(
             process_msg.Channel.PORTFOLIO, self.portfolio_callback
         )
+        self.processor.add_callback(
+            process_msg.Channel.ACCOUNT_SUMMARY, self.account_summary_callback
+        )
         self.processor.add_result_callback(self.result_callback)
         self.processor.add_error_callback(self.error_callback)
         await self.thalex.instruments(CALL_ID_INSTRUMENTS)
         await self.thalex.private_subscribe(
-            ["account.orders", "account.trade_history", "account.portfolio"],
+            [
+                "account.orders",
+                "account.trade_history",
+                "account.portfolio",
+                "account.summary",
+            ],
             CALL_ID_SUBSCRIBE,
         )
         while True:
@@ -191,7 +207,7 @@ class Trader:
         pass
 
     async def adjust_quotes(self, i: InstrumentData):
-        i.quote_prices = pricing(i)
+        i.quote_prices = pricing(i, self.required_margin > MAX_MARGIN)
         amount = BTC_LOTS if i.instrument.underlying == "BTCUSD" else ETH_LOTS
         for idx, side in [(0, thalex_py.Direction.BUY), (1, thalex_py.Direction.SELL)]:
             price = i.quote_prices[idx]
@@ -276,6 +292,9 @@ class Trader:
     async def portfolio_callback(self, _, portfolio):
         for position in portfolio:
             self.options[position["instrument_name"]].position = position["position"]
+
+    async def account_summary_callback(self, _, acc_sum):
+        self.required_margin = acc_sum["required_margin"]
 
     async def trades_callback(self, _, trades):
         for t in trades:
