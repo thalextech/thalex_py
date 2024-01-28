@@ -35,6 +35,7 @@ CALL_ID_INSTRUMENT = 1
 CALL_ID_SUBSCRIBE = 2
 CALL_ID_LOGIN = 3
 CALL_ID_CANCEL_ALL = 4
+CALL_ID_HEDGE = 5
 
 NUMBER_OF_EXPIRIES_TO_QUOTE = 1
 SUBSCRIBE_INTERVAL = "1000ms"
@@ -46,6 +47,8 @@ ETH_LOTS = 1
 AMEND_THRESHOLD = 3  # in ticks
 RETREAT = 0.5  # tick size * position / lots
 MAX_MARGIN = 5000
+DELTA_HEDGE_THRESHOLD = 0.5
+HEDGE_INSTRUMENT = "BTC-PERPETUAL"  # It's assumed to be d1
 
 
 class InstrumentType(enum.Enum):
@@ -161,11 +164,11 @@ class Trader:
         self.thalex = thalex
         self.network = network
         self.options: Dict[str, InstrumentData] = {}
-        self.futures: Dict[str, Instrument] = {}
         self.processor = process_msg.Processor()
         self.eligible_instruments = set()
         self.client_order_id: int = 0
         self.required_margin: float = 0.0
+        self.hedge_instrument: Optional[InstrumentData] = None
 
     async def hedge_task(self):
         await self.thalex.connect()
@@ -204,7 +207,23 @@ class Trader:
             await asyncio.sleep(1)
 
     async def hedge_deltas(self):
-        pass
+        if self.hedge_instrument is None:
+            return
+        deltas: float = self.hedge_instrument.position
+        for i in self.options.values():
+            deltas += i.position * i.ticker.delta
+        if abs(deltas) > DELTA_HEDGE_THRESHOLD:
+            logging.info(f"Hedging {deltas} deltas")
+            side = thalex_py.Direction.SELL if deltas > 0 else thalex_py.Direction.BUY
+            # Assuming we're hedging with D1 instrument
+            amount = round_to_tick(abs(deltas), self.hedge_instrument.instrument.tick_size)
+            await self.thalex.insert(
+                direction=side,
+                order_type=thalex_py.OrderType.MARKET,
+                instrument_name=HEDGE_INSTRUMENT,
+                amount=amount,
+                id=CALL_ID_HEDGE,
+            )
 
     async def adjust_quotes(self, i: InstrumentData):
         i.quote_prices = pricing(i, self.required_margin > MAX_MARGIN)
@@ -281,7 +300,9 @@ class Trader:
 
     async def ticker_callback(self, channel, ticker):
         iname = channel.split(".")[1]
-        if is_option(iname):
+        if iname == HEDGE_INSTRUMENT:
+            self.hedge_instrument.ticker = Ticker(ticker)
+        elif is_option(iname):
             i = self.options[iname]
             i.ticker = Ticker(ticker)
             await self.adjust_quotes(i)
@@ -291,22 +312,30 @@ class Trader:
 
     async def portfolio_callback(self, _, portfolio):
         for position in portfolio:
-            self.options[position["instrument_name"]].position = position["position"]
+            iname = position["instrument_name"]
+            if iname == HEDGE_INSTRUMENT:
+                self.hedge_instrument.position = position["position"]
+            else:
+                self.options[iname].position = position["position"]
 
     async def account_summary_callback(self, _, acc_sum):
         self.required_margin = acc_sum["required_margin"]
 
     async def trades_callback(self, _, trades):
+        totals = {}
         for t in trades:
             t = Trade(t)
+            totals[t.instrument] = totals.get(t.instrument, 0) + t.amount
             logging.info(
                 f"Traded {t.instrument}: {t.direction.value} {t.amount}@{t.price}"
             )
+        logging.info(f"Totals: {totals}")
 
     async def orders_callback(self, _, orders):
         for o in orders:
-            i = self.options[o["instrument_name"]]
-            i.orders[side_idx(thalex_py.Direction(o["direction"]))].update(o)
+            if o["instrument_name"] != HEDGE_INSTRUMENT:
+                i = self.options[o["instrument_name"]]
+                i.orders[side_idx(thalex_py.Direction(o["direction"]))].update(o)
 
     async def result_callback(self, result, id=None):
         if id == CALL_ID_INSTRUMENTS:
@@ -317,6 +346,8 @@ class Trader:
             logging.debug(f"Adjust order result: {result}")
         elif id == CALL_ID_LOGIN:
             logging.info(f"login result: {result}")
+        elif id == CALL_ID_HEDGE:
+            logging.debug(f"Hedge result: {result}")
         else:
             logging.info(result)
 
@@ -337,12 +368,13 @@ class Trader:
             if i.expiry_ts in expiries:
                 if i.type == InstrumentType.OPTION:
                     self.options[i.name] = InstrumentData(i)
-                elif i.type == InstrumentType.FUTURE:
-                    self.futures[i.name] = i
+            elif i.name == HEDGE_INSTRUMENT:
+                self.hedge_instrument = InstrumentData(i)
         subs = [
             f"ticker.{opt.instrument.name}.{SUBSCRIBE_INTERVAL}"
             for opt in self.options.values()
         ]
+        subs.append(f"ticker.{HEDGE_INSTRUMENT}.{SUBSCRIBE_INTERVAL}")
         await self.thalex.public_subscribe(subs, CALL_ID_SUBSCRIBE)
 
 
