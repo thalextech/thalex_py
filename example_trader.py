@@ -3,6 +3,7 @@ import argparse
 import asyncio
 import json
 import logging
+import math
 import sys
 import signal
 import os
@@ -39,7 +40,7 @@ CALL_ID_HEDGE = 5
 
 NUMBER_OF_EXPIRIES_TO_QUOTE = 1
 SUBSCRIBE_INTERVAL = "1000ms"
-DELTA_RANGE_TO_QUOTE = (0.02, 0.75)
+DELTA_RANGE_TO_QUOTE = (0.02, 0.8)
 BASE_SPREAD = 5.0
 SCALE_FACTOR = 0.1
 BTC_LOTS = 0.1
@@ -66,6 +67,10 @@ class OrderStatus(enum.Enum):
     FILLED = "filled"
 
 
+def is_open(status: OrderStatus):
+    return status in [OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED]
+
+
 class Instrument:
     def __init__(self, data: Dict):
         self.name: str = data["instrument_name"]
@@ -75,6 +80,7 @@ class Instrument:
         # self.option_type = data.get("option_type")
         self.expiry_ts: int = data.get("expiration_timestamp")
         self.strike_price: int = data.get("strike_price")
+        self.volume_tick: float = data.get("volume_tick_size")
 
 
 def is_option(instrument_name: str):
@@ -116,8 +122,8 @@ class Ticker:
 
 
 class InstrumentData:
-    def __init__(self, instrument):
-        self.instrument = instrument
+    def __init__(self, instrument: Instrument):
+        self.instrument: Instrument = instrument
         self.ticker: Optional[Ticker] = None
         self.quote_prices: List[Optional[float]] = [None, None]  # [bid, ask]
         self.prices_sent: List[Optional[float]] = [None, None]  # [bid, ask]
@@ -167,8 +173,8 @@ class Trader:
         self.processor = process_msg.Processor()
         self.eligible_instruments = set()
         self.client_order_id: int = 0
-        self.required_margin: float = 0.0
         self.hedge_instrument: Optional[InstrumentData] = None
+        self.margin_breach = False  # As in max desired margin not actual margin
 
     async def hedge_task(self):
         await self.thalex.connect()
@@ -213,10 +219,12 @@ class Trader:
         for i in self.options.values():
             deltas += i.position * i.ticker.delta
         if abs(deltas) > DELTA_HEDGE_THRESHOLD:
-            logging.info(f"Hedging {deltas} deltas")
             side = thalex_py.Direction.SELL if deltas > 0 else thalex_py.Direction.BUY
             # Assuming we're hedging with D1 instrument
-            amount = round_to_tick(abs(deltas), self.hedge_instrument.instrument.tick_size)
+            amount = round_to_tick(
+                abs(deltas / 2.0), self.hedge_instrument.instrument.volume_tick
+            )
+            logging.info(f"Hedging {math.copysign(amount, deltas):2} deltas")
             await self.thalex.insert(
                 direction=side,
                 order_type=thalex_py.OrderType.MARKET,
@@ -226,13 +234,13 @@ class Trader:
             )
 
     async def adjust_quotes(self, i: InstrumentData):
-        i.quote_prices = pricing(i, self.required_margin > MAX_MARGIN)
+        i.quote_prices = pricing(i, self.margin_breach)
         amount = BTC_LOTS if i.instrument.underlying == "BTCUSD" else ETH_LOTS
         for idx, side in [(0, thalex_py.Direction.BUY), (1, thalex_py.Direction.SELL)]:
             price = i.quote_prices[idx]
             sent = i.prices_sent[idx]
             if price is None:
-                if sent is not None:
+                if sent is not None and is_open(i.orders[idx].status):
                     i.prices_sent[idx] = None
                     client_order_id = i.orders[idx].id
                     logging.debug(
@@ -266,7 +274,7 @@ class Trader:
                 i.prices_sent[idx] = price
                 client_order_id = i.orders[idx].id
                 logging.debug(
-                    f"Amend {client_order_id} {i.instrument.name} {side.value} {price}"
+                    f"Amend {client_order_id} {i.instrument.name} {side.value} {sent} -> {price}"
                 )
                 await self.thalex.amend(
                     amount=amount,
@@ -278,7 +286,7 @@ class Trader:
     async def handle_throttled(self, oid):
         logging.warning(f"Throttled request for order: {oid}")
         await asyncio.sleep(0.1)
-        for iname, idata in self.options.items():
+        for idata in self.options.values():
             for order in idata.orders:
                 if order is not None and order.id == oid:
                     if order.status is None:
@@ -319,23 +327,32 @@ class Trader:
                 self.options[iname].position = position["position"]
 
     async def account_summary_callback(self, _, acc_sum):
-        self.required_margin = acc_sum["required_margin"]
+        required_margin = acc_sum["required_margin"]
+        if required_margin > MAX_MARGIN and not self.margin_breach:
+            logging.warning(
+                f"Required margin {required_margin} going into margin breach mode"
+            )
+            self.margin_breach = True
+        elif required_margin < MAX_MARGIN * 0.4 and self.margin_breach:
+            logging.info(f"Required margin {required_margin} quoting everything")
+            self.margin_breach = False
 
     async def trades_callback(self, _, trades):
-        totals = {}
         for t in trades:
             t = Trade(t)
-            totals[t.instrument] = totals.get(t.instrument, 0) + t.amount
             logging.info(
                 f"Traded {t.instrument}: {t.direction.value} {t.amount}@{t.price}"
             )
-        logging.info(f"Totals: {totals}")
 
     async def orders_callback(self, _, orders):
         for o in orders:
             if o["instrument_name"] != HEDGE_INSTRUMENT:
                 i = self.options[o["instrument_name"]]
-                i.orders[side_idx(thalex_py.Direction(o["direction"]))].update(o)
+                side_ind = side_idx(thalex_py.Direction(o["direction"]))
+                order = i.orders[side_ind]
+                order.update(o)
+                if not is_open(order.status):
+                    i.prices_sent[side_ind] = None
 
     async def result_callback(self, result, id=None):
         if id == CALL_ID_INSTRUMENTS:
@@ -352,10 +369,14 @@ class Trader:
             logging.info(result)
 
     async def error_callback(self, error, id=None):
-        if id is not None and id > 99 and error["code"] == 4:
-            await self.handle_throttled(id - 100)
+        if id is not None and id > 99:
+            logging.error(
+                f"Problem with order {id - 100}: {error}"
+            )
+            if error["code"] == 4:
+                await self.handle_throttled(id - 100)
         else:
-            logging.error(f"error: {error}")
+            logging.error(f"{id=}: error: {error}")
 
     async def process_instruments(self, instruments):
         instruments = [Instrument(i) for i in instruments]
