@@ -19,6 +19,27 @@ import process_msg
 import thalex_py
 from black_scholes import Greeks
 
+# The main idea behind this example is to demonstrate how thalex_py can be used to trade on Thalex.
+# It's not meant to be a profitable strategy, however you can use it to test the library and
+# write your own.
+#
+# The way this is designed, it connects to thalex, gets all instruments and then starts quoting options in
+# the nearest NUMBER_OF_EXPIRIES_TO_QUOTE expiries.
+#
+# Technically this is done in a number of async tasks running in ~parallel:
+#  - greeks_task: Simply recalculates the greeks for the portfolio periodically
+#  - hedge_task: Sets up basic subscriptions and makes the call to thalex.instruments.
+#                The response for that is going to be processed in process_instruments,
+#                subscribing to all the relevant tickers which trigger quote adjustments.
+#                After the initial setup hedge_task periodically checks if the portfolio breached
+#                2*MAX_DELTAS and hedges them if necessary.
+#  - listen_task: This task listens to the responses from the exchange and reacts to them. It uses process_msg
+#                 as a helper, that'll call the appropriate callback functions when thalex sends a subscription
+#                 notification or any other message.
+#                 The ticker_callback is called when there's a ticker notification, this is going to result in
+#                 quotes being adjusted.
+
+# We'll use these to match responses from thalex to the corresponding request.
 CALL_ID_INSTRUMENTS = 0
 CALL_ID_INSTRUMENT = 1
 CALL_ID_SUBSCRIBE = 2
@@ -26,24 +47,27 @@ CALL_ID_LOGIN = 3
 CALL_ID_CANCEL_ALL = 4
 CALL_ID_HEDGE = 5
 
-UNDERLYING = "BTCUSD"
-NUMBER_OF_EXPIRIES_TO_QUOTE = 2
-SUBSCRIBE_INTERVAL = "1000ms"
-DELTA_RANGE_TO_QUOTE = (0.3, 0.6)
-EDGE = 40
+# These are used to configure how the trader behaves.
+UNDERLYING = "BTCUSD"  # We'll only quote options of this underlying
+NUMBER_OF_EXPIRIES_TO_QUOTE = 2  # More expiries means more quotes, but more throttling
+SUBSCRIBE_INTERVAL = "1000ms"  # Also how frequently we adjust quotes
+DELTA_RANGE_TO_QUOTE = (0.2, 0.7)  # Wider range means more quotes, but more throttling
+EDGE = 40  # base edge to create a spread around the mark price
 EDGE_FACTOR = 1.5  # extra edge per open delta
-LOTS = 0.1
-AMEND_THRESHOLD = 3  # ticks
-RETREAT = 0.002
-MAX_MARGIN = 10000
+LOTS = 0.1  # Default options quote size
+AMEND_THRESHOLD = 3  # In ticks. We don't amend smaller than this, to avoid throttling.
+RETREAT = 0.002  # Skew prices for open position size
+MAX_MARGIN = 10000  # If the required margin goes above this, we only reduce positions.
+# If the deltas go outside (-MAX_DELTAS, MAX_DELTAS), we'll only insert quotes that reduces their absolute value.
+# If the absolute deltas breach 2*MAX_DELTAS, we'll hedge half of them with HEDGE_INSTRUMENT
 MAX_DELTAS = 0.8
-MAX_OPEN_OPTION_DELTAS = 5.0
+MAX_OPEN_OPTION_DELTAS = 5.0  # We won't increase open option positions above this.
 HEDGE_INSTRUMENT = "BTC-PERPETUAL"  # It's assumed to be d1
-DELTA_SKEW = 500
-VEGA_SKEW = 20
-GAMMA_SKEW = 2000000
-MAX_VEGA = 20
-MAX_GAMMA = 0.01
+DELTA_SKEW = 500  # To skew quote prices for portfolio delta
+VEGA_SKEW = 20  # To skew quote prices for portfolio vega
+GAMMA_SKEW = 2000000  # To skew quote prices for portfolio gamma
+MAX_VEGA = 20  # If we breach this, we only reduce positions
+MAX_GAMMA = 0.01  # If we breach this, we only reduce positions
 
 
 class InstrumentType(enum.Enum):
@@ -149,7 +173,7 @@ class Trader:
         self.options: Dict[str, InstrumentData] = {}
         self.processor = process_msg.Processor()
         self.eligible_instruments = set()
-        self.client_order_id: int = 0
+        self.client_order_id: int = 100
         self.hedge_instrument: Optional[InstrumentData] = None
         self.close_only = False
         self.open_opt_deltas = 0.0
@@ -294,6 +318,7 @@ class Trader:
             sent = i.prices_sent[idx]
             if price is None:
                 if sent is not None and is_open(i.orders[idx].status):
+                    # We have an open order that we want to cancel.
                     i.prices_sent[idx] = None
                     client_order_id = i.orders[idx].id
                     logging.debug(
@@ -301,9 +326,10 @@ class Trader:
                     )
                     await self.thalex.cancel(
                         client_order_id=client_order_id,
-                        id=100 + client_order_id,
+                        id=client_order_id,
                     )
             elif sent is None:
+                # We didn't send any quote to the exchange, this is a new one. Let's insert it.
                 i.prices_sent[idx] = price
                 if i.orders[idx] is None:
                     client_order_id = self.client_order_id
@@ -321,9 +347,10 @@ class Trader:
                     price=price,
                     post_only=True,
                     client_order_id=client_order_id,
-                    id=100 + client_order_id,
+                    id=client_order_id,
                 )
             elif abs(price - sent) >= AMEND_THRESHOLD * i.instrument.tick_size:
+                # We only amend if the difference is large enough, to avoid throttling.
                 i.prices_sent[idx] = price
                 client_order_id = i.orders[idx].id
                 logging.debug(
@@ -333,10 +360,11 @@ class Trader:
                     amount=LOTS,
                     price=price,
                     client_order_id=client_order_id,
-                    id=100 + client_order_id,
+                    id=client_order_id,
                 )
 
     async def handle_throttled(self, oid):
+        # If you see this a lot, you should decrease NUMBER_OF_EXPIRIES_TO_QUOTE or DELTA_RANGE_TO_QUOTE.
         logging.warning(f"Throttled request for order: {oid}")
         await asyncio.sleep(0.2)
         for idata in self.options.values():
@@ -357,7 +385,7 @@ class Trader:
             await self.processor.process_msg(msg)
 
     async def lwt_callback(self, channel, lwt):
-        logging.info(lwt)
+        logging.info(f"{channel}: {lwt}")
 
     async def ticker_callback(self, channel, ticker):
         iname = channel.split(".")[1]
@@ -439,9 +467,9 @@ class Trader:
 
     async def error_callback(self, error, id=None):
         if id is not None and id > 99:
-            logging.error(f"Problem with order {id - 100}: {error}")
+            logging.error(f"Problem with order {id}: {error}")
             if error["code"] == 4:
-                await self.handle_throttled(id - 100)
+                await self.handle_throttled(id)
         else:
             logging.error(f"{id=}: error: {error}")
 

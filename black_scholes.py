@@ -7,6 +7,7 @@ SQRT_PI_2 = SQRT_PI * SQRT_2
 
 class Greeks:
     def __init__(self, delta=None):
+        # Thalex gives us the deltas for free, so calculating them is optional
         self.delta = 0 if delta is None else delta
         self.gamma = 0
         self.vega = 0
