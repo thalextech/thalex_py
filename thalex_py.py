@@ -4,7 +4,7 @@ import logging
 
 import jwt
 import time
-from typing import Optional, List
+from typing import Optional, List, Union
 
 import websockets
 
@@ -50,6 +50,13 @@ class Target(enum.Enum):
     INDEX = "index"
 
 
+class Product(enum.Enum):
+    BTC_FUTURES = "FBTCUSD"
+    BTC_OPTIONS = "OBTCUSD"
+    ETH_FUTURES = "FETHUSD"
+    ETH_OPTIONS = "OETHUSD"
+
+
 class RfqLeg:
     def __init__(self, amount: float, instrument_name: str):
         self.instrument_name = instrument_name
@@ -71,6 +78,9 @@ class SideQuote:
     def dumps(self):
         return {"a": self.a, "p": self.p}
 
+    def __repr__(self):
+        return f"{self.a}@{self.p}"
+
 
 class Quote:
     def __init__(
@@ -86,6 +96,10 @@ class Quote:
             d["b"] = self.b.dumps()
         if self.a is not None:
             d["a"] = self.a.dumps()
+        return d
+
+    def __repr__(self):
+        return f"(b: {self.b}, a: {self.a})"
 
 
 class Asset:
@@ -938,12 +952,16 @@ class Thalex:
         that side will be removed with delete reason 'immediate_cancel'.
         """
         await self._send(
-            "private/mass_quote", id, quotes=quotes, label=label, post_only=post_only
+            "private/mass_quote",
+            id,
+            quotes=[q.dumps() for q in quotes],
+            label=label,
+            post_only=post_only,
         )
 
     async def set_mm_protection(
         self,
-        product: str,
+        product: Union[Product, str],
         amount: float,
         id: Optional[int] = None,
     ):
@@ -952,6 +970,8 @@ class Thalex:
         :product:  Product group ('F' + index or 'O' + index)
         :amount:  Amount to execute before remaining mass quotes are cancelled
         """
+        if isinstance(product, Product):
+            product = product.value
         await self._send(
             "private/set_mm_protection", id, product=product, amount=amount
         )

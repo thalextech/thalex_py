@@ -1,3 +1,4 @@
+import copy
 import enum
 import argparse
 import asyncio
@@ -9,27 +10,14 @@ import signal
 import os
 from typing import Dict, Optional, List
 
-import keys
+import websockets
 
-# private_keys = {
-#     thalex_py.Network.TEST: """-----BEGIN RSA PRIVATE KEY-----
-# ...
-# -----END RSA PRIVATE KEY-----
-# """,
-#     thalex_py.Network.PROD: """-----BEGIN RSA PRIVATE KEY-----
-# ...
-# -----END RSA PRIVATE KEY-----
-# """
-# }
-#
-# key_ids = {
-#     thalex_py.Network.TEST: "K123456789",
-#     thalex_py.Network.PROD: "K123456789"
-# }
+import black_scholes
+import keys  # Rename _keys.py to keys.py and add your keys
 
 import process_msg
 import thalex_py
-
+from black_scholes import Greeks
 
 CALL_ID_INSTRUMENTS = 0
 CALL_ID_INSTRUMENT = 1
@@ -38,18 +26,24 @@ CALL_ID_LOGIN = 3
 CALL_ID_CANCEL_ALL = 4
 CALL_ID_HEDGE = 5
 
-NUMBER_OF_EXPIRIES_TO_QUOTE = 1
+UNDERLYING = "BTCUSD"
+NUMBER_OF_EXPIRIES_TO_QUOTE = 2
 SUBSCRIBE_INTERVAL = "1000ms"
-DELTA_RANGE_TO_QUOTE = (0.02, 0.8)
-BASE_SPREAD = 5.0
-SCALE_FACTOR = 0.1
-BTC_LOTS = 0.1
-ETH_LOTS = 1
-AMEND_THRESHOLD = 3  # in ticks
-RETREAT = 0.5  # tick size * position / lots
-MAX_MARGIN = 5000
-DELTA_HEDGE_THRESHOLD = 0.5
+DELTA_RANGE_TO_QUOTE = (0.3, 0.6)
+EDGE = 40
+EDGE_FACTOR = 1.5  # extra edge per open delta
+LOTS = 0.1
+AMEND_THRESHOLD = 3  # ticks
+RETREAT = 0.002
+MAX_MARGIN = 10000
+MAX_DELTAS = 0.8
+MAX_OPEN_OPTION_DELTAS = 5.0
 HEDGE_INSTRUMENT = "BTC-PERPETUAL"  # It's assumed to be d1
+DELTA_SKEW = 500
+VEGA_SKEW = 20
+GAMMA_SKEW = 2000000
+MAX_VEGA = 20
+MAX_GAMMA = 0.01
 
 
 class InstrumentType(enum.Enum):
@@ -77,7 +71,7 @@ class Instrument:
         self.underlying = data["underlying"]
         self.tick_size: float = data["tick_size"]
         self.type: InstrumentType = InstrumentType(data["type"])
-        # self.option_type = data.get("option_type")
+        self.option_type = data.get("option_type")
         self.expiry_ts: int = data.get("expiration_timestamp")
         self.strike_price: int = data.get("strike_price")
         self.volume_tick: float = data.get("volume_tick_size")
@@ -119,42 +113,25 @@ class Ticker:
         self.delta: float = data["delta"]
         self.best_bid: float = data.get("best_bid_price")
         self.best_ask: float = data.get("best_ask_price")
+        self.mark_ts: float = data["mark_timestamp"]
+        self.iv: float = data.get("iv", 0.0)
+        self.fwd: float = data["forward"]
 
 
 class InstrumentData:
     def __init__(self, instrument: Instrument):
         self.instrument: Instrument = instrument
         self.ticker: Optional[Ticker] = None
+        self.greeks = Greeks()
         self.quote_prices: List[Optional[float]] = [None, None]  # [bid, ask]
         self.prices_sent: List[Optional[float]] = [None, None]  # [bid, ask]
         self.orders: List[Optional[Order]] = [None, None]  # [bid, ask]
         self.position: float = 0.0
-
-
-def pricing(i: InstrumentData, reduce_only: bool) -> [float, float]:  # [bid, ask]
-    if (
-        i.instrument.type != InstrumentType.OPTION
-        or abs(i.ticker.delta) < DELTA_RANGE_TO_QUOTE[0]
-        or DELTA_RANGE_TO_QUOTE[1] < abs(i.ticker.delta)
-    ):
-        return [None, None]
-    if reduce_only and i.position == 0:
-        return [None, None]
-
-    lots = BTC_LOTS if i.instrument.underlying == "BTCUSD" else ETH_LOTS
-    retreat = RETREAT * i.instrument.tick_size * i.position / lots
-    spread = max(BASE_SPREAD, i.ticker.mark_price * SCALE_FACTOR)
-    bid = i.ticker.mark_price - spread - retreat
-    ask = i.ticker.mark_price + spread - retreat
-    bid = round_to_tick(bid, i.instrument.tick_size)
-    if bid < i.instrument.tick_size:
-        bid = None
-    ask = round_to_tick(ask, i.instrument.tick_size)
-    if reduce_only and i.position > 0:
-        bid = None
-    if reduce_only and i.position < 0:
-        ask = None
-    return [bid, ask]
+        self.edge = 0
+        self.retreat = 0
+        self.d_skew = 0
+        self.g_skew = 0
+        self.v_skew = 0
 
 
 def side_idx(side: thalex_py.Direction):
@@ -174,7 +151,10 @@ class Trader:
         self.eligible_instruments = set()
         self.client_order_id: int = 0
         self.hedge_instrument: Optional[InstrumentData] = None
-        self.margin_breach = False  # As in max desired margin not actual margin
+        self.close_only = False
+        self.open_opt_deltas = 0.0
+        self.greeks = Greeks()
+        self.can_trade = False
 
     async def hedge_task(self):
         await self.thalex.connect()
@@ -210,15 +190,18 @@ class Trader:
         )
         while True:
             await self.hedge_deltas()
-            await asyncio.sleep(1)
+            await asyncio.sleep(300)
 
     async def hedge_deltas(self):
-        if self.hedge_instrument is None:
-            return
-        deltas: float = self.hedge_instrument.position
+        deltas: float = (
+            0 if self.hedge_instrument is None else self.hedge_instrument.position
+        )
+        self.open_opt_deltas = 0
         for i in self.options.values():
-            deltas += i.position * i.ticker.delta
-        if abs(deltas) > DELTA_HEDGE_THRESHOLD:
+            d = i.position * i.ticker.delta
+            deltas += d
+            self.open_opt_deltas += abs(d)
+        if abs(deltas) > MAX_DELTAS * 2 and self.hedge_instrument is not None:
             side = thalex_py.Direction.SELL if deltas > 0 else thalex_py.Direction.BUY
             # Assuming we're hedging with D1 instrument
             amount = round_to_tick(
@@ -233,9 +216,79 @@ class Trader:
                 id=CALL_ID_HEDGE,
             )
 
+    async def greeks_task(self):
+        await asyncio.sleep(3)
+        self.recalc_greeks()
+        self.can_trade = True
+        while True:
+            await asyncio.sleep(30)
+            self.recalc_greeks()
+
+    def recalc_greeks(self):
+        self.greeks = Greeks(self.hedge_instrument.position)
+        self.open_opt_deltas = 0
+        for i in self.options.values():
+            maturity = (i.instrument.expiry_ts - i.ticker.mark_ts) / (
+                365.25 * 24 * 3600
+            )
+            i.greeks = black_scholes.all_greeks(
+                i.ticker.fwd,
+                i.instrument.strike_price,
+                i.ticker.iv,
+                maturity,
+                i.instrument.option_type == "put",
+                i.ticker.delta,
+            )
+            if i.position != 0:
+                m_greeks = copy.copy(i.greeks)
+                m_greeks.mult(i.position)
+                self.greeks.add(m_greeks)
+                self.open_opt_deltas += abs(i.position * i.ticker.delta)
+
+    def pricing(self, i: InstrumentData) -> [float, float]:  # [bid, ask]
+        within_range = (
+            i.instrument.type == InstrumentType.OPTION
+            and DELTA_RANGE_TO_QUOTE[0] < abs(i.ticker.delta) < DELTA_RANGE_TO_QUOTE[1]
+        )
+        want_to_quote = (within_range and not self.close_only) or i.position != 0
+        if not want_to_quote or not self.can_trade:
+            return [None, None]
+
+        i.retreat = (
+            RETREAT * i.ticker.mark_price * i.instrument.tick_size * i.position / LOTS
+        )
+        i.d_skew = self.greeks.delta * i.greeks.delta * DELTA_SKEW * LOTS
+        i.v_skew = (self.greeks.vega / MAX_VEGA) * i.greeks.vega * VEGA_SKEW * LOTS
+        i.g_skew = (self.greeks.gamma / MAX_GAMMA) * i.greeks.gamma * GAMMA_SKEW * LOTS
+        i.edge = max(1.0, self.open_opt_deltas * EDGE_FACTOR) * EDGE
+        bid = i.ticker.mark_price - i.edge - i.retreat - i.d_skew - i.v_skew - i.g_skew
+        ask = i.ticker.mark_price + i.edge - i.retreat - i.d_skew - i.v_skew - i.g_skew
+        bid = round_to_tick(bid, i.instrument.tick_size)
+        if bid < i.instrument.tick_size:
+            bid = None
+        ask = round_to_tick(ask, i.instrument.tick_size)
+        if (
+            (self.close_only and i.position >= 0)
+            or (MAX_VEGA < self.greeks.vega and i.position >= 0)
+            or (MAX_GAMMA < self.greeks.gamma and i.position >= 0)
+            or (MAX_OPEN_OPTION_DELTAS < self.open_opt_deltas and i.position >= 0)
+            or (MAX_DELTAS < self.greeks.delta and i.ticker.delta > 0)
+            or (-MAX_DELTAS > self.greeks.delta and i.ticker.delta < 0)
+        ):
+            bid = None
+        if (
+            (self.close_only and i.position <= 0)
+            or (MAX_VEGA < self.greeks.vega and i.position <= 0)
+            or (MAX_GAMMA < self.greeks.gamma and i.position <= 0)
+            or (MAX_OPEN_OPTION_DELTAS < self.open_opt_deltas and i.position <= 0)
+            or (MAX_DELTAS < self.greeks.delta and i.ticker.delta < 0)
+            or (-MAX_DELTAS > self.greeks.delta and i.ticker.delta > 0)
+        ):
+            ask = None
+        return [bid, ask]
+
     async def adjust_quotes(self, i: InstrumentData):
-        i.quote_prices = pricing(i, self.margin_breach)
-        amount = BTC_LOTS if i.instrument.underlying == "BTCUSD" else ETH_LOTS
+        i.quote_prices = self.pricing(i)
         for idx, side in [(0, thalex_py.Direction.BUY), (1, thalex_py.Direction.SELL)]:
             price = i.quote_prices[idx]
             sent = i.prices_sent[idx]
@@ -264,7 +317,7 @@ class Trader:
                 await self.thalex.insert(
                     direction=side,
                     instrument_name=i.instrument.name,
-                    amount=amount,
+                    amount=LOTS,
                     price=price,
                     post_only=True,
                     client_order_id=client_order_id,
@@ -277,7 +330,7 @@ class Trader:
                     f"Amend {client_order_id} {i.instrument.name} {side.value} {sent} -> {price}"
                 )
                 await self.thalex.amend(
-                    amount=amount,
+                    amount=LOTS,
                     price=price,
                     client_order_id=client_order_id,
                     id=100 + client_order_id,
@@ -285,7 +338,7 @@ class Trader:
 
     async def handle_throttled(self, oid):
         logging.warning(f"Throttled request for order: {oid}")
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.2)
         for idata in self.options.values():
             for order in idata.orders:
                 if order is not None and order.id == oid:
@@ -324,35 +377,51 @@ class Trader:
             if iname == HEDGE_INSTRUMENT:
                 self.hedge_instrument.position = position["position"]
             else:
-                self.options[iname].position = position["position"]
+                i = self.options.get(iname)
+                if i is not None:
+                    i.position = position["position"]
 
     async def account_summary_callback(self, _, acc_sum):
         required_margin = acc_sum["required_margin"]
-        if required_margin > MAX_MARGIN and not self.margin_breach:
+        if required_margin > MAX_MARGIN and not self.close_only:
             logging.warning(
                 f"Required margin {required_margin} going into margin breach mode"
             )
-            self.margin_breach = True
-        elif required_margin < MAX_MARGIN * 0.4 and self.margin_breach:
+            self.close_only = True
+        elif required_margin < MAX_MARGIN * 0.4 and self.close_only:
             logging.info(f"Required margin {required_margin} quoting everything")
-            self.margin_breach = False
+            self.close_only = False
 
     async def trades_callback(self, _, trades):
         for t in trades:
             t = Trade(t)
-            logging.info(
-                f"Traded {t.instrument}: {t.direction.value} {t.amount}@{t.price}"
-            )
+            mark = None
+            if t.instrument == HEDGE_INSTRUMENT and self.hedge_instrument is not None:
+                mark = self.hedge_instrument.ticker.mark_price
+            else:
+                i = self.options.get(t.instrument)
+                if i is not None:
+                    mark = i.ticker.mark_price
+            if mark is None:
+                logging.info(
+                    f"Traded {t.instrument}: {t.direction.value} {t.amount}@{t.price}"
+                )
+            else:
+                logging.info(
+                    f"Traded {t.instrument}: {t.direction.value} {t.amount}@{t.price} {mark=:.1f}"
+                )
+        self.recalc_greeks()
 
     async def orders_callback(self, _, orders):
         for o in orders:
-            if o["instrument_name"] != HEDGE_INSTRUMENT:
-                i = self.options[o["instrument_name"]]
-                side_ind = side_idx(thalex_py.Direction(o["direction"]))
-                order = i.orders[side_ind]
-                order.update(o)
-                if not is_open(order.status):
-                    i.prices_sent[side_ind] = None
+            i = self.options.get(o["instrument_name"])
+            if i is None:
+                continue
+            side_ind = side_idx(thalex_py.Direction(o["direction"]))
+            order = i.orders[side_ind]
+            order.update(o)
+            if not is_open(order.status):
+                i.prices_sent[side_ind] = None
 
     async def result_callback(self, result, id=None):
         if id == CALL_ID_INSTRUMENTS:
@@ -370,9 +439,7 @@ class Trader:
 
     async def error_callback(self, error, id=None):
         if id is not None and id > 99:
-            logging.error(
-                f"Problem with order {id - 100}: {error}"
-            )
+            logging.error(f"Problem with order {id - 100}: {error}")
             if error["code"] == 4:
                 await self.handle_throttled(id - 100)
         else:
@@ -380,17 +447,18 @@ class Trader:
 
     async def process_instruments(self, instruments):
         instruments = [Instrument(i) for i in instruments]
+        instruments = [i for i in instruments if i.underlying == UNDERLYING]
         expiries = list(
             set([i.expiry_ts for i in instruments if i.type == InstrumentType.OPTION])
         )
         expiries.sort()
         expiries = expiries[:NUMBER_OF_EXPIRIES_TO_QUOTE]
         for i in instruments:
-            if i.expiry_ts in expiries:
+            if i.name == HEDGE_INSTRUMENT:
+                self.hedge_instrument = InstrumentData(i)
+            elif i.expiry_ts in expiries:
                 if i.type == InstrumentType.OPTION:
                     self.options[i.name] = InstrumentData(i)
-            elif i.name == HEDGE_INSTRUMENT:
-                self.hedge_instrument = InstrumentData(i)
         subs = [
             f"ticker.{opt.instrument.name}.{SUBSCRIBE_INTERVAL}"
             for opt in self.options.values()
@@ -424,23 +492,31 @@ else:
 
 
 async def main():
-    thalex = thalex_py.Thalex(network=network)
-    trader = Trader(thalex, network)
-    try:
-        await asyncio.gather(trader.listen_task(), trader.hedge_task())
-    except asyncio.CancelledError:
-        pass
-    finally:
-        await asyncio.sleep(0.2)
-        await thalex.cancel_all(id=CALL_ID_CANCEL_ALL)
-        while True:
-            r = await thalex.receive()
-            r = json.loads(r)
-            if r.get("id", -1) == CALL_ID_CANCEL_ALL:
-                logging.info(f"Cancelled all {r.get('result', 0)} orders")
-                break
-        await thalex.disconnect()
-        logging.info("disconnected")
+    keep_going = True
+    while keep_going:
+        thalex = thalex_py.Thalex(network=network)
+        trader = Trader(thalex, network)
+        try:
+            await asyncio.gather(
+                trader.listen_task(), trader.hedge_task(), trader.greeks_task()
+            )
+        except asyncio.CancelledError:
+            keep_going = False
+        except websockets.exceptions.ConnectionClosedError:
+            logging.exception("Lost connection. Reconnecting.")
+            continue
+        finally:
+            await asyncio.sleep(0.2)
+            await thalex.cancel_all(id=CALL_ID_CANCEL_ALL)
+            while True:
+                r = await thalex.receive()
+                r = json.loads(r)
+                if r.get("id", -1) == CALL_ID_CANCEL_ALL:
+                    logging.info(f"Cancelled all {r.get('result', 0)} orders")
+                    break
+            if not keep_going:
+                await thalex.disconnect()
+                logging.info("disconnected")
 
 
 def handle_signal(loop, task):
