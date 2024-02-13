@@ -137,7 +137,7 @@ class Thalex:
         return await self.ws.recv()
 
     def connected(self):
-        return self.ws is not None
+        return self.ws is not None and self.ws.open
 
     async def connect(self):
         self.ws = await websockets.connect(self.net.value, ping_interval=5)

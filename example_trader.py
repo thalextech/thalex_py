@@ -5,9 +5,11 @@ import asyncio
 import json
 import logging
 import math
+import socket
 import sys
 import signal
 import os
+import time
 from typing import Dict, Optional, List
 
 import websockets
@@ -528,23 +530,21 @@ async def main():
             await asyncio.gather(
                 trader.listen_task(), trader.hedge_task(), trader.greeks_task()
             )
+        except (websockets.ConnectionClosed, socket.gaierror) as e:
+            logging.error(f"Lost connection ({e}). Reconnecting...")
+            time.sleep(0.1)
+            continue
         except asyncio.CancelledError:
             keep_going = False
-        except websockets.exceptions.ConnectionClosedError:
-            logging.exception("Lost connection. Reconnecting.")
-            continue
-        finally:
-            await asyncio.sleep(0.2)
-            await thalex.cancel_all(id=CALL_ID_CANCEL_ALL)
-            while True:
-                r = await thalex.receive()
-                r = json.loads(r)
-                if r.get("id", -1) == CALL_ID_CANCEL_ALL:
-                    logging.info(f"Cancelled all {r.get('result', 0)} orders")
-                    break
-            if not keep_going:
+            if thalex.connected():
+                await thalex.cancel_all(id=CALL_ID_CANCEL_ALL)
+                while True:
+                    r = await thalex.receive()
+                    r = json.loads(r)
+                    if r.get("id", -1) == CALL_ID_CANCEL_ALL:
+                        logging.info(f"Cancelled all {r.get('result', 0)} orders")
+                        break
                 await thalex.disconnect()
-                logging.info("disconnected")
 
 
 def handle_signal(loop, task):
