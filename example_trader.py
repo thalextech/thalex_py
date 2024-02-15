@@ -62,13 +62,13 @@ EDGE = 40  # base edge to create a spread around the mark price
 EDGE_FACTOR = 1.5  # extra edge per open delta
 LOTS = 0.1  # Default options quote size
 AMEND_THRESHOLD = 3  # In ticks. We don't amend smaller than this, to avoid throttling.
-RETREAT = 0.002  # Skew prices for open position size
+RETREAT = 0.006  # Skew prices for open position size
 MAX_MARGIN = 100000  # If the required margin goes above this, we only reduce positions.
 # If the deltas go outside (-MAX_DELTAS, MAX_DELTAS), we'll only insert quotes that reduces their absolute value.
 # If the absolute deltas breach 2*MAX_DELTAS, we'll hedge half of them with HEDGE_INSTRUMENT
 MAX_DELTAS = 0.8
 MAX_OPEN_OPTION_DELTAS = 5.0  # We won't increase open option positions above this.
-HEDGE_INSTRUMENT = "BTC-14FEB24"  # It's assumed to be d1
+HEDGE_INSTRUMENT = "BTC-15FEB24"  # It's assumed to be d1
 DELTA_SKEW = 500  # To skew quote prices for portfolio delta
 VEGA_SKEW = 20  # To skew quote prices for portfolio vega
 GAMMA_SKEW = 2000000  # To skew quote prices for portfolio gamma
@@ -77,6 +77,7 @@ MAX_GAMMA = 0.01  # If we breach (-MAX_GAMMA, MAX_GAMMA) we stop selling/buying 
 
 ERROR_CODE_THROTTLE = 4
 ERROR_CODE_ORDER_NOT_FOUND = 1
+
 
 class InstrumentType(enum.Enum):
     OPTION = "option"
@@ -110,17 +111,11 @@ def is_option(instrument_name: str):
 
 
 class Order:
-    def __init__(self, id: int, price: float, side: thalex_py.Direction):
+    def __init__(self, id: int, price: float, side: thalex_py.Direction, status: Optional[OrderStatus] = None):
         self.id: int = id
         self.price: float = price
         self.side: thalex_py.Direction = side
-        self.status: Optional[OrderStatus] = None
-
-    def update(self, data: Dict):
-        self.status = OrderStatus(data["status"])
-        self.price = data.get(
-            "price", 0 if self.side == thalex_py.Direction.SELL else float("inf")
-        )
+        self.status: Optional[OrderStatus] = status
 
     def is_open(self):
         return self.status in [OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED]
@@ -128,6 +123,14 @@ class Order:
     def __repr__(self):
         st = "None" if self.status is None else self.status.value
         return f"Order({self.id=}, {self.price=}, side={self.side.value}, status={st})"
+
+
+def order_from_data(data: Dict) -> Order:
+    side = thalex_py.Direction(data["direction"])
+    price = data.get(
+        "price", 0 if side == thalex_py.Direction.SELL else float("inf")
+    )
+    return Order(id=data["client_order_id"], price=price, side=side, status=OrderStatus(data["status"]))
 
 
 class Trade:
@@ -251,7 +254,9 @@ class Trader:
         while self.hedge_instrument is None:
             elapsed = time.time() - start
             if elapsed > 5:
-                logging.warning(f"Still didn't get ticker for {HEDGE_INSTRUMENT} after {elapsed:.1f}s")
+                logging.warning(
+                    f"Still didn't get ticker for {HEDGE_INSTRUMENT} after {elapsed:.1f}s"
+                )
             await asyncio.sleep(1)
         self.recalc_greeks()
         self.can_trade = True
@@ -329,7 +334,9 @@ class Trader:
             sent = i.prices_sent[idx]
             if price is None:
                 # We don't want to quote this side of this instrument
-                if sent is not None or (i.orders[idx] is not None and i.orders[idx].is_open()):
+                if sent is not None or (
+                    i.orders[idx] is not None and i.orders[idx].is_open()
+                ):
                     # We have an open order that we want to cancel.
                     # If the order is open because the previous cancel was not yet processed, we might be trying to
                     # delete it twice, but that should be rare and even then it's better to be safe than sorry.
@@ -387,12 +394,16 @@ class Trader:
                         if error["code"] == ERROR_CODE_ORDER_NOT_FOUND:
                             # We tried to cancel something that's not there. It might have been canceled
                             # or filled before our cancel request was processed.
-                            logging.warning(f"Order({oid}) already filled/cancelled: {order.side.value} "
-                                            f"{idata.instrument.name}")
+                            logging.warning(
+                                f"Order({oid}) already filled/cancelled: {order.side.value} "
+                                f"{idata.instrument.name}"
+                            )
                         else:
                             # We failed to pull an order. That's bad.
-                            logging.error(f"Failed to cancel order({oid}): {order.side.value} "
-                                          f"{idata.instrument.name}: {error}")
+                            logging.error(
+                                f"Failed to cancel order({oid}): {order.side.value} "
+                                f"{idata.instrument.name}: {error}"
+                            )
                             # Best we can do is try again immediately
                             await self.thalex.cancel(
                                 client_order_id=oid,
@@ -401,19 +412,25 @@ class Trader:
                     elif not order.is_open():
                         # We'll leave it at that for now and insert it later.
                         idata.prices_sent[side] = None
-                        logging.info(f"Failed to insert order({oid}): {order.side.value} @{sent} "
-                                     f"{idata.instrument.name}: {error}")
+                        logging.info(
+                            f"Failed to insert order({oid}): {order.side.value} @{sent} "
+                            f"{idata.instrument.name}: {error}"
+                        )
                     else:
                         # We did send some price and there's an open order
                         if error["code"] == ERROR_CODE_THROTTLE:
                             # If you see this a lot, you should decrease NUMBER_OF_EXPIRIES_TO_QUOTE or
                             # DELTA_RANGE_TO_QUOTE.
-                            logging.info(f"Amend({oid}) {order.side.value} {idata.instrument.name} "
-                                         f"{order.price} -> {sent} throttled")
+                            logging.info(
+                                f"Amend({oid}) {order.side.value} {idata.instrument.name} "
+                                f"{order.price} -> {sent} throttled"
+                            )
                             await asyncio.sleep(0.2)
                         else:
-                            logging.warning(f"Failed to amend order({oid}) {order.side.value} {idata.instrument.name} "
-                                            f"{order.price} -> {sent}: {error}")
+                            logging.warning(
+                                f"Failed to amend order({oid}) {order.side.value} {idata.instrument.name} "
+                                f"{order.price} -> {sent}: {error}"
+                            )
                         await self.adjust_quotes(idata)
                     return
         # The order wasn't found above
@@ -488,9 +505,8 @@ class Trader:
             if i is None:
                 continue
             side_ind = side_idx(thalex_py.Direction(o["direction"]))
-            order = i.orders[side_ind]
-            order.update(o)
-            if not order.is_open():
+            i.orders[side_ind] = order_from_data(o)
+            if not i.orders[side_ind].is_open():
                 i.prices_sent[side_ind] = None
 
     async def result_callback(self, result, id=None):
