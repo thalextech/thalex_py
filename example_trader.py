@@ -55,6 +55,7 @@ CALL_ID_HEDGE = 5
 
 # These are used to configure how the trader behaves.
 UNDERLYING = "BTCUSD"  # We'll only quote options of this underlying
+NUMBER_OF_EXPIRIES_TO_SKIP = 0  # We won't quote the fist NUMBER_OF_EXPIRIES_TO_SKIP expiries
 NUMBER_OF_EXPIRIES_TO_QUOTE = 3  # More expiries means more quotes, but more throttling
 SUBSCRIBE_INTERVAL = "200ms"  # Also how frequently we adjust quotes
 DELTA_RANGE_TO_QUOTE = (0.1, 0.8)  # Wider range means more quotes, but more throttling
@@ -68,7 +69,7 @@ MAX_MARGIN = 100000  # If the required margin goes above this, we only reduce po
 # If the absolute deltas breach 2*MAX_DELTAS, we'll hedge half of them with HEDGE_INSTRUMENT
 MAX_DELTAS = 0.8
 MAX_OPEN_OPTION_DELTAS = 5.0  # We won't increase open option positions above this.
-HEDGE_INSTRUMENT = "BTC-15FEB24"  # It's assumed to be d1
+HEDGE_INSTRUMENT = "BTC-PERPETUAL"  # It's assumed to be d1
 DELTA_SKEW = 500  # To skew quote prices for portfolio delta
 VEGA_SKEW = 20  # To skew quote prices for portfolio vega
 GAMMA_SKEW = 2000000  # To skew quote prices for portfolio gamma
@@ -536,7 +537,7 @@ class Trader:
             set([i.expiry_ts for i in instruments if i.type == InstrumentType.OPTION])
         )
         expiries.sort()
-        expiries = expiries[:NUMBER_OF_EXPIRIES_TO_QUOTE]
+        expiries = expiries[NUMBER_OF_EXPIRIES_TO_SKIP:NUMBER_OF_EXPIRIES_TO_SKIP+NUMBER_OF_EXPIRIES_TO_QUOTE]
         for i in instruments:
             if i.name == HEDGE_INSTRUMENT:
                 self.hedge_instrument = InstrumentData(i)
