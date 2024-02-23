@@ -9,7 +9,7 @@ from typing import Optional, List, Union
 import websockets
 
 
-def make_auth_token(kid, private_key):
+def _make_auth_token(kid, private_key):
     return jwt.encode(
         {"iat": time.time()},
         private_key,
@@ -83,9 +83,7 @@ class SideQuote:
 
 
 class Quote:
-    def __init__(
-        self, instrument_name: str, bid: Optional[SideQuote], ask: Optional[SideQuote]
-    ):
+    def __init__(self, instrument_name: str, bid: Optional[SideQuote], ask: Optional[SideQuote]):
         self.i = instrument_name
         self.b = bid
         self.a = ask
@@ -157,24 +155,27 @@ class Thalex:
         await self.ws.send(request)
 
     async def login(
-        self, token: str, account: Optional[str] = None, id: Optional[int] = None
+        self,
+        key_id: str,
+        private_key: str,
+        account: Optional[str] = None,
+        id: Optional[int] = None,
     ):
         """Login
 
-        :token:  As described in 'Authentication'
+        :key_id:  The key id to use
+        :private_key:  Private key to use
         :account:  Number of an account to select for use in this session. Optional, if not specified,
         default account for the API key is selected.
         """
         await self._send(
             "public/login",
             id,
-            token=token,
+            token=_make_auth_token(key_id, private_key),
             account=account,
         )
 
-    async def set_cancel_on_disconnect(
-        self, timeout_secs: int, id: Optional[int] = None
-    ):
+    async def set_cancel_on_disconnect(self, timeout_secs: int, id: Optional[int] = None):
         """Set cancel on disconnect
 
         :timeout_secs:  Heartbeat interval
@@ -497,9 +498,7 @@ class Thalex:
 
         :label:  User label for this RFQ, which will be reflected in eventual trades.
         """
-        await self._send(
-            "private/create_rfq", id, legs=[leg.dumps() for leg in legs], label=label
-        )
+        await self._send("private/create_rfq", id, legs=[leg.dumps() for leg in legs], label=label)
 
     async def cancel_rfq(
         self,
@@ -972,9 +971,7 @@ class Thalex:
         """
         if isinstance(product, Product):
             product = product.value
-        await self._send(
-            "private/set_mm_protection", id, product=product, amount=amount
-        )
+        await self._send("private/set_mm_protection", id, product=product, amount=amount)
 
     async def verify_withdrawal(
         self,

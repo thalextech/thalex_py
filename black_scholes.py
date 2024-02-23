@@ -26,7 +26,7 @@ class Greeks:
         self.theta *= factor
 
     def __repr__(self):
-        return f"Greeks(delta: {self.delta:.2f}, gamma: {self.gamma:.2f}, vega: {self.vega:.2f}, theta: {self.theta:.2f})"
+        return f"delta: {self.delta:.2f}, gamma: {self.gamma:.5f}, vega: {self.vega:.2f}, theta: {self.theta:.2f})"
 
 
 def call_delta(fwd: float, k: int, sigma: float, maturity: int) -> float:
@@ -62,9 +62,7 @@ def vega(fwd: float, k: float, sigma: float, maturity: float) -> float:
         return 0.0
 
 
-def all_greeks(
-    fwd: float, k: float, sigma: float, maturity: float, is_put: bool, delta=None
-) -> Greeks:
+def all_greeks(fwd: float, k: float, sigma: float, maturity: float, is_put: bool, delta=None) -> Greeks:
     voltime = math.sqrt(maturity) * sigma
     greeks = Greeks(delta)
     if voltime > 0.0:

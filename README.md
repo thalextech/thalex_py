@@ -1,12 +1,15 @@
 Python exchange connector for thalex.
 
-thalex.py has a function for every websocket endpoint with typehints and a recieve function that returns the messages from the exchange one by one.
+thalex.py has a function for every websocket endpoint with typehints and a recieve function 
+that returns the messages from the exchange one by one.
 
-example_trader.py has a minimalistic example of how the connector can be used.
-If you want to use it, you have to rename/copy _keys.py to keys.py, create api
-keys on thalex ui and put them in keys.py.
+The example_options.py and example_rolls.py are examples of how you might want to quote those instruments.
 
-process_msg,py is a little helper to process messages from thalex.
+Keep in mind that the examples are not meant to be out of the box money printers, 
+they just illustrate what an implementation of a trading strategy could look like.
+
+If you want to run the examples, you have to rename/copy _keys.py to keys.py, 
+create api keys on thalex ui and put them in keys.py.
 
 Feel free to use it however you want, just remember that it comes without warranty.
 

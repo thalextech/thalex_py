@@ -1,5 +1,8 @@
 keys.py
-
+fnd.csv
+trades.log
+trades_options.log
+trades_rolls.log
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
