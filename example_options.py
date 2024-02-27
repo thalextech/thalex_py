@@ -30,24 +30,24 @@ import keys  # Rename _keys.py to keys.py and add your keys
 
 # These are used to configure how the quoter behaves.
 UNDERLYING = "BTCUSD"  # We'll only quote options of this underlying
-NUMBER_OF_EXPIRIES_TO_QUOTE = 3  # More expiries means more quotes, but more throttling
+NUMBER_OF_EXPIRIES_TO_QUOTE = 5  # More expiries means more quotes, but more throttling
 SUBSCRIBE_INTERVAL = "200ms"  # Also how frequently we adjust quotes
 UNQUOTED_SUBSCRIBE_INTERVAL = "5000ms"  # For tickers of not quoted instruments, only to track greeks
 DELTA_RANGE_TO_QUOTE = (0.1, 0.8)  # Wider range means more quotes, but more throttling
 SPREAD = 30  # base spread to create a spread around the mark price
 SPREAD_FACTOR = 1.05  # extra spread per cumulative absolute open options deltas
-LOTS = 0.1  # Default options quote size
+LOTS = 0.5  # Default options quote size
 AMEND_THRESHOLD = 3  # In ticks. We don't amend smaller than this, to avoid throttling.
 INDEX_RECALC_THRESHOLD = 10  # If index changes this many dollars, we recalculate quotes
 RETREAT = 0.01  # Skew prices for open position size
-MAX_MARGIN = 100000  # If the required margin goes above this, we only reduce positions.
+MAX_MARGIN = 300000  # If the required margin goes above this, we only reduce positions.
 # If the deltas go outside (-MAX_DELTAS, MAX_DELTAS),
 # we'll only insert quotes that reduce their absolute value.
 MAX_DELTAS = 1.0
 MAX_OPEN_OPTION_DELTAS = 10.0  # As in cumulative absolute deltas across all option positions.
-DELTA_SKEW = 1500  # To skew quote prices for portfolio delta
-VEGA_SKEW = 100  # To skew quote prices for portfolio vega
-GAMMA_SKEW = 20000000  # To skew quote prices for portfolio gamma
+DELTA_SKEW = 300  # To skew quote prices for portfolio delta
+VEGA_SKEW = 20  # To skew quote prices for portfolio vega
+GAMMA_SKEW = 4000000  # To skew quote prices for portfolio gamma
 MAX_VEGA = 60  # If we breach (-MAX_VEGA, MAX_VEGA) we stop selling/buying options
 MAX_GAMMA = 0.02  # If we breach (-MAX_GAMMA, MAX_GAMMA) we stop selling/buying options
 # To identify the orders and trades of this quoter. If you run multiple in parallel (eg for different underlyings),
@@ -530,6 +530,7 @@ class OptionQuoter:
     # This is where we handle notifications in the channels we have subscribed to.
     async def notification(self, channel: str, notification: Union[Dict, List], snapshot: bool):
         if channel.startswith("ticker."):
+            # https://www.thalex.com/docs/#tag/subs_market_data/Ticker
             iname = channel.split(".")[1]
             ticker = Ticker(notification)
             i = self.options.get(iname)
@@ -540,6 +541,7 @@ class OptionQuoter:
             else:
                 self.unquoted_instruments[iname].ticker = ticker
         elif channel == f"price_index.{UNDERLYING}":
+            # https://www.thalex.com/docs/#tag/subs_market_data/Index-price
             index: float = notification["price"]
             for i in self.options.values():
                 if abs(i.last_quote_index - index) > INDEX_RECALC_THRESHOLD:
@@ -561,6 +563,7 @@ class OptionQuoter:
         else:
             logging.error(f"Notification for unknown {channel=}")
 
+    # https://www.thalex.com/docs/#tag/subs_accounting/Account-portfolio
     # Thalex sends us this notification every time our portfolio changes.
     # We use this to track our positions in instruments for risk metrics calculations.
     async def portfolio_callback(self, portfolio: List[Dict]):
@@ -581,9 +584,8 @@ class OptionQuoter:
                             id=CALL_ID_SUBSCRIBE,
                         )
                         unq.subbed = True
-                else:
-                    logging.error(f"Position for unknown instrument: {iname}")
 
+    # https://www.thalex.com/docs/#tag/subs_accounting/Account-summary
     # Thalex sends us this notification periodically.
     # We use this to track our required margin in order to avoid liquidation.
     def account_summary(self, acc_sum: Dict):
@@ -598,6 +600,7 @@ class OptionQuoter:
             logging.info(f"Required margin: {required_margin}. Quoting everything again.")
             self.close_only = False
 
+    # https://www.thalex.com/docs/#tag/subs_accounting/Account-trade-history
     # Thalex sends us this notification every time we get a fill.
     # We use trades notifications to log the trades done by this quoter for analysis
     def trades_callback(self, trades: List[Dict]):
@@ -625,6 +628,7 @@ class OptionQuoter:
                     logging.info(f"Traded {line}")
                     file.write(f"{now} " + line + "\n")
 
+    # https://www.thalex.com/docs/#tag/subs_accounting/Session-orders
     # Thalex sends us this notification every time when an order of ours changes for any reason.
     # This is where we keep track of their actual statuses.
     def orders_callback(self, orders: List[Dict]):
@@ -646,6 +650,7 @@ class OptionQuoter:
         else:
             logging.error(f"{cid=}: error: {error}")
 
+    # https://www.thalex.com/docs/#tag/subs_market_data/Instruments
     # This function should only be called with a snapshot in the instruments channel.
     # If it's not a snapshot, we raise an InstrumentsChanged exception instead of calling this function.
     # See the definition of InstrumentsChanged for an explanation.

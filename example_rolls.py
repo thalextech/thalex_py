@@ -354,12 +354,14 @@ class RollQuoter:
             return [None, None]  # too far in the future or we don't have fnd data
         elif dte <= 1:
             if now - self.perp.ticker_ma[0][0] < FND_MA_1DTE_WINDOW:
-                return [None, None]  # The funding rate we collected is not enough yet to quote this
+                # The funding rate we collected is not enough yet to quote this
+                return [None, None]
             fnd = self.fnd_ma_1dte
             spread = SPREAD_1DTE
         elif dte <= 3:
             if now - self.perp.ticker_ma[0][0] < FND_MA_3DTE_WINDOW:
-                return [None, None]  # The funding rate we collected is not enough yet to quote this
+                # The funding rate we collected is not enough yet to quote this
+                return [None, None]
             fnd = self.fnd_ma_3dte
             spread = SPREAD_3DTE
         else:
@@ -520,6 +522,7 @@ class RollQuoter:
             if not i.orders[side_ind].is_open():
                 i.prices_sent[side_ind] = None
 
+    # https://www.thalex.com/docs/#tag/subs_market_data/Ticker
     # This is where we handle ticker notification sent by thalex
     async def ticker_callback(self, channel, ticker):
         now = utcnow()
@@ -536,12 +539,14 @@ class RollQuoter:
             if i is not None:
                 i.ticker = Ticker(ticker)
 
+    # https://www.thalex.com/docs/#tag/subs_market_data/Index-price
     # Thalex sends us the underlying index price in this channel. If it changed enough, we adjust quotes.
     async def index_callback(self, index: float):
         self.index = index
         if abs(index - self.last_quote_index) > INDEX_RECALC_THRESHOLD:
             await self.adjust_quotes(utcnow())
 
+    # https://www.thalex.com/docs/#tag/subs_market_data/Instruments
     # We iterate over the instruments, pop the removed ones from our dicts, and start tracking the new ones we want.
     async def instruments_callback(self, instruments):
         subs = []  # So that we call subscribe only once, with all the new channels
@@ -620,6 +625,7 @@ class RollQuoter:
         else:
             logging.error(f"Notification for unknown channel: {channel}")
 
+    # https://www.thalex.com/docs/#tag/subs_accounting/Account-portfolio
     # Thalex sends us this notification every time our portfolio changes.
     # We use this to track our positions in the legs of the rolls.
     def portfolio_callback(self, portfolio: List[Dict]):
@@ -632,6 +638,7 @@ class RollQuoter:
                 if i is not None:
                     i.position = position["position"]
 
+    # https://www.thalex.com/docs/#tag/subs_accounting/Account-trade-history
     # Thalex sends us this notification every time we get a fill.
     # We use trades notifications to log the trades done by this quoter for analysis
     async def trades_callback(self, trades: List[Dict]):
