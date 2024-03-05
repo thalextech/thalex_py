@@ -5,6 +5,9 @@ that returns the messages from the exchange one by one.
 
 The example_options.py and example_rolls.py are examples of how you might want to quote those instruments.
 
+example_taker.py is a simple taker for one instrument that keeps trying to take with a defined pnl,
+until a desired position is entered into.
+
 Keep in mind that the examples are not meant to be out of the box money printers, 
 they just illustrate what an implementation of a trading strategy could look like.
 
