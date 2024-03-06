@@ -1,15 +1,18 @@
-Python exchange connector for thalex.
+This is a free to use python exchange connector library for [thalex](https://www.thalex.com).
+
+See also the [api documentation](https://www.thalex.com/docs/).
 
 thalex.py has a function for every websocket endpoint with typehints and a recieve function 
 that returns the messages from the exchange one by one.
 
-The example_options.py and example_rolls.py are examples of how you might want to quote those instruments.
-
-example_taker.py is a simple taker for one instrument that keeps trying to take with a defined pnl,
-until a desired position is entered into.
+There are some examples on how you could use this library:
+- example_options.py and example_rolls.py are examples of how you might want to use the library to
+quote those instruments.
+- example_taker.py is the most straightforward example. It shows how you could use this library to implement a 
+simple taker that keeps taking with a set minimum pnl until a desired position is achieved.
 
 Keep in mind that the examples are not meant to be out of the box money printers, 
-they just illustrate what an implementation of a trading strategy could look like.
+they just illustrate what an implementation of a trading bot could look like.
 
 If you want to run the examples, you have to rename/copy _keys.py to keys.py, 
 create api keys on thalex ui and put them in keys.py.
