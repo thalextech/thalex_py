@@ -721,7 +721,7 @@ async def reconnect_and_quote_forever(network):
                     r = await thalex.receive()
                     r = json.loads(r)
                     if r.get("id", -1) == CALL_ID_CANCEL_SESSION:
-                        logging.info(f"Cancelled all {r.get('result', 0)} orders")
+                        logging.info(f"Cancelled session orders")
                         break
                 await thalex.disconnect()
 

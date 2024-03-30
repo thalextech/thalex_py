@@ -431,7 +431,7 @@ class RollQuoter:
                         client_order_id=client_order_id,
                         id=client_order_id,
                     )
-                elif price - sent >= AMEND_THRESHOLD * roll.instrument.tick_size:
+                elif abs(price - sent) >= AMEND_THRESHOLD * roll.instrument.tick_size:
                     # Neither price nor sent are none, and they differ enough for us to want to amend the order.
                     # We only amend if the difference is large enough, to avoid throttling.
                     roll.prices_sent[idx] = price
@@ -704,7 +704,7 @@ async def reconnect_and_quote_forever(network: thalex_py.Network):
                     r = await thalex.receive()
                     r = json.loads(r)
                     if r.get("id", -1) == CALL_ID_CANCEL_SESSION:
-                        logging.info(f"Cancelled all {r.get('result', 0)} orders")
+                        logging.info(f"Cancelled session orders")
                         break
                 await thalex.disconnect()
 
