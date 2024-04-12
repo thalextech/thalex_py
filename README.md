@@ -6,6 +6,7 @@ thalex.py has a function for every websocket endpoint with typehints and a recie
 that returns the messages from the exchange one by one.
 
 There are some examples on how you could use this library:
+- example_instrument_counter.py is a very simple example that prints how many different there are on prod
 - example_options.py and example_rolls.py are examples of how you might want to use the library to
 quote those instruments.
 - example_taker.py is the most straightforward example. It shows how you could use this library to implement a 

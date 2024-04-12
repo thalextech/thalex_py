@@ -14,12 +14,11 @@ import enum
 import websockets
 
 import thalex_py
-import keys  # Rename _keys.py to keys.py and add your keys
+import keys  # Rename _keys.py to keys.py and add your keys. There are instructions how to create keys in that file.
 
 
 # The main idea behind this example is to demonstrate how thalex_py can be used to quote rolls on Thalex.
-# It's not meant to be an out-of-the-box money printer, however you can use it to test the library and
-# write your own strategy.
+# It's not financial advice, however you can use it to test the library and write your own strategy.
 #
 # The behaviour of the example quoter can be tuned with a number of constants defined below.
 # The way this is designed, it connects to thalex, gets all instruments,
@@ -723,7 +722,7 @@ def main():
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
     )
     parser = argparse.ArgumentParser(
-        description="thalex example trader",
+        description="thalex example future roll quoter",
     )
 
     parser.add_argument("--network", metavar="CSTR")
