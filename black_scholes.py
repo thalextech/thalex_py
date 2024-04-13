@@ -29,7 +29,33 @@ class Greeks:
         return f"delta: {self.delta:.2f}, gamma: {self.gamma:.5f}, vega: {self.vega:.2f}, theta: {self.theta:.2f})"
 
 
-def call_delta(fwd: float, k: int, sigma: float, maturity: int) -> float:
+def call_discount(fwd: float, k: int, sigma: float, maturity: float) -> float:
+    voltime = math.sqrt(maturity) * sigma
+    if voltime > 0.0:
+        d1 = math.log(fwd / k) / voltime + 0.5 * voltime
+        norm_d1 = 0.5 + 0.5 * math.erf(d1 / math.sqrt(2))
+        norm_d1_vol = 0.5 + 0.5 * math.erf((d1 - voltime) / math.sqrt(2))
+        return fwd * norm_d1 - k * norm_d1_vol
+    elif fwd > k:
+        return fwd - k
+    else:
+        return 0.0
+
+
+def put_discount(fwd: float, k: int, sigma: float, maturity: float) -> float:
+    voltime = math.sqrt(maturity) * sigma
+    if voltime > 0.0:
+        d1 = math.log(fwd / k) / voltime + 0.5 * voltime
+        norm_d1 = 0.5 + 0.5 * math.erf(-d1 / math.sqrt(2))
+        norm_d1_vol = 0.5 + 0.5 * math.erf((voltime - d1) / math.sqrt(2))
+        return k * norm_d1_vol - fwd * norm_d1
+    elif fwd > k:
+        return fwd - k
+    else:
+        return 0.0
+
+
+def call_delta(fwd: float, k: int, sigma: float, maturity: float) -> float:
     voltime = math.sqrt(maturity) * sigma
     if voltime > 0.0:
         d1 = math.log(fwd / k) / voltime + 0.5 * voltime
@@ -38,7 +64,7 @@ def call_delta(fwd: float, k: int, sigma: float, maturity: int) -> float:
         return 1.0 if fwd > k else 0.0
 
 
-def put_delta(fwd: float, k: int, sigma: float, maturity: int) -> float:
+def put_delta(fwd: float, k: int, sigma: float, maturity: float) -> float:
     return call_delta(fwd, k, sigma, maturity) - 1.0
 
 
