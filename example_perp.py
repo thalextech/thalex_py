@@ -27,6 +27,12 @@ import keys  # Rename _keys.py to keys.py and add your keys. There are instructi
 UNDERLYING = "BTCUSD"
 LABEL = "P"
 AMEND_THRESHOLD = 10  # ticks
+BUY_SKEW = 0.2        # Distance for buy quotes from Index
+SELL_SKEW = 0.6       # Distance for sell quotes from Index
+bidamount1 = 4.2      # ordersize for your first level bid
+askamount1 = 4.2      # ordersize for your first level ask
+bidamount2 = 6        # ordersize for second level
+askamount2 = 6
 
 # We'll use these to match responses from thalex to the corresponding request.
 # The numbers are arbitrary, but they need to be unique per CALL_ID.
@@ -144,21 +150,20 @@ class PerpQuoter:
         # we'll create two quotes on each side based on the mark price and the index.
         # We could also use eg the funding rate (it's in the ticker) and the portfolio here.
         bid1 = th.SideQuote(
-            price=self.round_to_tick(self.ticker.mark_price - 10), amount=0.4
+            price=self.round_to_tick(self.index - BUY_SKEW), amount=bidamount1
         )
         bid2 = th.SideQuote(
-            price=self.round_to_tick(self.ticker.mark_price - 10 - self.index * 0.0001),
-            amount=0.8,
+            price=self.round_to_tick(self.index - BUY_SKEW - self.index * 0.0005),
+            amount=bidamount2,
         )
         ask1 = th.SideQuote(
-            price=self.round_to_tick(self.ticker.mark_price + 10), amount=0.4
+            price=self.round_to_tick(self.index + SELL_SKEW), amount=askamount1
         )
         ask2 = th.SideQuote(
-            price=self.round_to_tick(self.ticker.mark_price + 10 + self.index * 0.0001),
-            amount=0.8,
+            price=self.round_to_tick(self.index + SELL_SKEW + self.index * 0.0005),
+            amount=askamount2,
         )
         return [[bid1, bid2], [ask1, ask2]]
-
     # This is the task that creates the quotes and pushes them to thalex.
     async def quote_task(self):
         while True:
