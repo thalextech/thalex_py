@@ -24,9 +24,9 @@ import keys  # Rename _keys.py to keys.py and add your keys. There are instructi
 # The actual operation is done in the PerpQuoter class, the quotes are created in the make_quotes function.
 
 # These are used to configure how the quoter behaves.
-UNDERLYING = "BTCUSD"
+UNDERLYING = "ETHUSD"
 LABEL = "P"
-AMEND_THRESHOLD = 10  # ticks
+AMEND_THRESHOLD = 6  # ticks
 BUY_SKEW = 0.2        # Distance for buy quotes from Index
 SELL_SKEW = 0.6       # Distance for sell quotes from Index
 bidamount1 = 4.2      # ordersize for your first level bid
