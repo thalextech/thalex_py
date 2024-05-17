@@ -632,6 +632,16 @@ class Thalex:
             id,
         )
 
+    async def portfolio(
+            self,
+            id: Optional[int] = None,
+    ):
+        """Portfolio"""
+        await self._send(
+            "private/portfolio",
+            id,
+        )
+
     async def open_orders(
         self,
         id: Optional[int] = None,
