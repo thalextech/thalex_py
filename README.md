@@ -11,6 +11,7 @@ There are some examples on how you could use this library:
 quote those instruments.
 - example_taker.py is the most straightforward example. It shows how you could use this library to implement a 
 simple taker that keeps taking with a set minimum pnl until a desired position is achieved.
+- ...
 
 Keep in mind that the examples are not meant to be out of the box money printers, 
 they just illustrate what an implementation of a trading bot could look like.

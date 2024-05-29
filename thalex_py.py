@@ -83,7 +83,9 @@ class SideQuote:
 
 
 class Quote:
-    def __init__(self, instrument_name: str, bid: Optional[SideQuote], ask: Optional[SideQuote]):
+    def __init__(
+        self, instrument_name: str, bid: Optional[SideQuote], ask: Optional[SideQuote]
+    ):
         self.i = instrument_name
         self.b = bid
         self.a = ask
@@ -498,7 +500,9 @@ class Thalex:
 
         :label:  User label for this RFQ, which will be reflected in eventual trades.
         """
-        await self._send("private/create_rfq", id, legs=[leg.dumps() for leg in legs], label=label)
+        await self._send(
+            "private/create_rfq", id, legs=[leg.dumps() for leg in legs], label=label
+        )
 
     async def cancel_rfq(
         self,
@@ -535,11 +539,15 @@ class Thalex:
             limit_price=limit_price,
         )
 
+    async def open_rfqs(self, id: Optional[int] = None):
+        """Retrieves a list of open RFQs created by this account."""
+        await self._send("private/open_rfqs", id)
+
     async def mm_rfqs(
         self,
         id: Optional[int] = None,
     ):
-        """Open RFQs"""
+        """Retrieves a list of open RFQs that this account has access to."""
         await self._send(
             "private/mm_rfqs",
             id,
@@ -633,8 +641,8 @@ class Thalex:
         )
 
     async def portfolio(
-            self,
-            id: Optional[int] = None,
+        self,
+        id: Optional[int] = None,
     ):
         """Portfolio"""
         await self._send(
