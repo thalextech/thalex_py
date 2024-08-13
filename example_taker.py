@@ -1,10 +1,8 @@
-import argparse
 import asyncio
 import json
 import logging
 import os
 import signal
-import sys
 from typing import Dict, Optional
 
 import thalex_py as th
@@ -25,6 +23,7 @@ INSTRUMENT = "ETH-PERPETUAL"  # Name of the instrument we'll try to take
 # If you run multiple in bots parallel, you should give them different labels.
 LABEL = "TKR"
 DESIRED_POSITION = 10.5  # We'll keep taking until we get this position.
+NETWORK = th.Network.TEST
 
 # We'll use these to match responses from thalex to the corresponding request.
 # The numbers are arbitrary, but they need to be unique per CALL_ID.
@@ -160,28 +159,7 @@ def main():
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
     )
-    parser = argparse.ArgumentParser(
-        description="thalex example trader",
-    )
-
-    parser.add_argument("--network", metavar="CSTR")
-    parser.add_argument("--log", default="info", metavar="CSTR")
-    args = parser.parse_args(sys.argv[1:])
-
-    if args.network == "prod":
-        arg_network = th.Network.PROD
-    elif args.network == "test":
-        arg_network = th.Network.TEST
-    else:
-        logging.error("--network invalid or missing")
-        assert False  # --network invalid or missing
-
-    if args.log == "debug":
-        logging.getLogger().setLevel(logging.DEBUG)
-    else:
-        logging.getLogger().setLevel(logging.INFO)
-
-    taker = Taker(arg_network)
+    taker = Taker(NETWORK)
     loop = asyncio.get_event_loop()
     main_task = loop.create_task(taker.take())
 

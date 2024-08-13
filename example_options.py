@@ -1,10 +1,8 @@
 import copy
-import argparse
 import asyncio
 import json
 import logging
 import socket
-import sys
 import signal
 import os
 import time
@@ -29,7 +27,7 @@ import keys  # Rename _keys.py to keys.py and add your keys. There are instructi
 
 # These are used to configure how the quoter behaves.
 UNDERLYING = "BTCUSD"  # We'll only quote options of this underlying
-NUMBER_OF_EXPIRIES_TO_QUOTE = 5  # More expiries means more quotes, but more throttling
+NUMBER_OF_EXPIRIES_TO_QUOTE = 1  # More expiries means more quotes, but more throttling
 SUBSCRIBE_INTERVAL = "200ms"  # Also how frequently we adjust quotes
 UNQUOTED_SUBSCRIBE_INTERVAL = "5000ms"  # For tickers of not quoted instruments, only to track greeks
 DELTA_RANGE_TO_QUOTE = (0.1, 0.8)  # Wider range means more quotes, but more throttling
@@ -55,7 +53,7 @@ LABEL = "X"
 TRADE_LOG = "trades_options.log"  # File path for logging trades
 GREEKS_CALC_PERIOD = 30  # We'll recalculate portfolio greeks and pricing skews every GREEKS_PRINT_PERIOD seconds.
 GREEKS_PRINT_PERIOD = 600  # We'll print portfolio greeks and pricing skews every GREEKS_PRINT_PERIOD seconds.
-
+NETWORK = thalex_py.Network.TEST
 
 # We'll use these to match responses from thalex to the corresponding request.
 # The numbers are arbitrary, but they need to be unique per CALL_ID.
@@ -738,30 +736,8 @@ def main():
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
     )
-    parser = argparse.ArgumentParser(
-        description="thalex example options quoter",
-    )
-    parser.add_argument("--network", metavar="CSTR")
-    parser.add_argument("--log", default="info", metavar="CSTR")
-    args = parser.parse_args(sys.argv[1:])
-
-    if args.network == "prod":
-        arg_network = thalex_py.Network.PROD
-    elif args.network == "test":
-        arg_network = thalex_py.Network.TEST
-    elif args.network == "dev":
-        arg_network = thalex_py.Network.DEV
-    else:
-        logging.error("network invalid or missing")
-        assert False  # network invalid or missing
-
-    if args.log == "debug":
-        logging.getLogger().setLevel(logging.DEBUG)
-    else:
-        logging.getLogger().setLevel(logging.INFO)
-
     loop = asyncio.get_event_loop()
-    main_task = loop.create_task(reconnect_and_quote_forever(arg_network))
+    main_task = loop.create_task(reconnect_and_quote_forever(NETWORK))
     if os.name != "nt":  # Non-Windows platforms
         loop.add_signal_handler(signal.SIGTERM, handle_signal, loop, main_task)
         loop.add_signal_handler(signal.SIGINT, handle_signal, loop, main_task)

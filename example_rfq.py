@@ -1,11 +1,11 @@
-import argparse
 import asyncio
 import json
 import logging
-import sys
 
 import thalex_py as th
 import keys
+
+NETWORK = th.Network.TEST
 
 
 # This is a very basic example of how you can create and trade an rfq on thalex.
@@ -50,23 +50,9 @@ async def main():
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
     )
-    parser = argparse.ArgumentParser(
-        description="thalex rfq example",
-    )
-    parser.add_argument("--network", metavar="CSTR")
-    parser.add_argument("--log", default="info", metavar="CSTR")
-    args = parser.parse_args(sys.argv[1:])
-    if args.network == "prod":
-        arg_network = th.Network.PROD
-    elif args.network == "test":
-        arg_network = th.Network.TEST
-    else:
-        logging.error("--network invalid or missing")
-        assert False  # --network invalid or missing
-
-    thalex = th.Thalex(arg_network)
+    thalex = th.Thalex(NETWORK)
     await thalex.connect()
-    await thalex.login(keys.key_ids[arg_network], keys.private_keys[arg_network], id=1)
+    await thalex.login(keys.key_ids[NETWORK], keys.private_keys[NETWORK], id=1)
     logging.info(await thalex.receive())
     await create_and_buy_rfq(thalex)
     await thalex.disconnect()

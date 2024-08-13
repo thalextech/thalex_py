@@ -53,6 +53,7 @@ MAX_POSITION = 1.0  # Maximum absolute position of any instrument
 # you should give them different labels.
 LABEL = "R"
 TRADE_LOG = "trades_rolls.log"  # File path for logging trades
+NETWORK = thalex_py.Network.TEST
 
 
 # We'll use these to match responses from thalex to the corresponding request.
@@ -721,29 +722,8 @@ def main():
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
     )
-    parser = argparse.ArgumentParser(
-        description="thalex example future roll quoter",
-    )
-
-    parser.add_argument("--network", metavar="CSTR")
-    parser.add_argument("--log", default="info", metavar="CSTR")
-    args = parser.parse_args(sys.argv[1:])
-
-    if args.network == "prod":
-        arg_network = thalex_py.Network.PROD
-    elif args.network == "test":
-        arg_network = thalex_py.Network.TEST
-    else:
-        logging.error("network invalid or missing")
-        assert False  # network invalid or missing
-
-    if args.log == "debug":
-        logging.getLogger().setLevel(logging.DEBUG)
-    else:
-        logging.getLogger().setLevel(logging.INFO)
-
     loop = asyncio.get_event_loop()
-    main_task = loop.create_task(reconnect_and_quote_forever(arg_network))
+    main_task = loop.create_task(reconnect_and_quote_forever(NETWORK))
 
     if os.name != "nt":  # Non-Windows platforms
         loop.add_signal_handler(signal.SIGTERM, handle_signal, loop, main_task)

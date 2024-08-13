@@ -1,11 +1,9 @@
-import argparse
 import asyncio
 import json
 import logging
 import os
 import signal
 import socket
-import sys
 import time
 from typing import Union, Dict, Optional, List
 import enum
@@ -27,6 +25,7 @@ import keys  # Rename _keys.py to keys.py and add your keys. There are instructi
 UNDERLYING = "BTCUSD"
 LABEL = "P"
 AMEND_THRESHOLD = 10  # ticks
+NETWORK = th.Network.TEST
 
 # We'll use these to match responses from thalex to the corresponding request.
 # The numbers are arbitrary, but they need to be unique per CALL_ID.
@@ -375,29 +374,8 @@ def main():
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
     )
-    parser = argparse.ArgumentParser(
-        description="thalex example perpetual quoter",
-    )
-
-    parser.add_argument("--network", metavar="CSTR")
-    parser.add_argument("--log", default="info", metavar="CSTR")
-    args = parser.parse_args(sys.argv[1:])
-
-    if args.network == "prod":
-        arg_network = th.Network.PROD
-    elif args.network == "test":
-        arg_network = th.Network.TEST
-    else:
-        logging.error("--network invalid or missing")
-        assert False  # --network invalid or missing
-
-    if args.log == "debug":
-        logging.getLogger().setLevel(logging.DEBUG)
-    else:
-        logging.getLogger().setLevel(logging.INFO)
-
     loop = asyncio.get_event_loop()
-    main_task = loop.create_task(reconnect_and_quote_forever(arg_network))
+    main_task = loop.create_task(reconnect_and_quote_forever(NETWORK))
 
     if os.name != "nt":  # Non-Windows platforms
         loop.add_signal_handler(signal.SIGTERM, handle_signal, loop, main_task)
