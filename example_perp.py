@@ -24,8 +24,13 @@ import keys  # Rename _keys.py to keys.py and add your keys. There are instructi
 # These are used to configure how the quoter behaves.
 UNDERLYING = "BTCUSD"
 LABEL = "P"
-AMEND_THRESHOLD = 10  # ticks
+AMEND_THRESHOLD = 5  # ticks
 NETWORK = th.Network.TEST
+SPREAD = 15  # Our best quotes will be index - SPREAD and index + SPREAD
+BID_STEP = 5  # ticks distance between quote levels
+BID_SIZES = [0.2, 0.4]  # sizes for each quoted level
+ASK_STEP = 5  # ticks distance between quote levels
+ASK_SIZES = [0.2, 0.4]  # sizes for each quoted level
 
 # We'll use these to match responses from thalex to the corresponding request.
 # The numbers are arbitrary, but they need to be unique per CALL_ID.
@@ -139,24 +144,26 @@ class PerpQuoter:
     # This creates the quotes we want to have in the book in multiple levels.
     # We'll adjust our quotes in the book to reflect the result of this function.
     def make_quotes(self) -> List[List[th.SideQuote]]:  # [[bids..], [asks...]]
-        # Just to demonstrate how we could create the quotes,
-        # we'll create two quotes on each side based on the mark price and the index.
         # We could also use eg the funding rate (it's in the ticker) and the portfolio here.
-        bid1 = th.SideQuote(
-            price=self.round_to_tick(self.ticker.mark_price - 10), amount=0.4
-        )
-        bid2 = th.SideQuote(
-            price=self.round_to_tick(self.ticker.mark_price - 10 - self.index * 0.0001),
-            amount=0.8,
-        )
-        ask1 = th.SideQuote(
-            price=self.round_to_tick(self.ticker.mark_price + 10), amount=0.4
-        )
-        ask2 = th.SideQuote(
-            price=self.round_to_tick(self.ticker.mark_price + 10 + self.index * 0.0001),
-            amount=0.8,
-        )
-        return [[bid1, bid2], [ask1, ask2]]
+        bids = [
+            th.SideQuote(
+                price=self.round_to_tick(
+                    self.index - (SPREAD + BID_STEP * lvl) * self.tick
+                ),
+                amount=amt,
+            )
+            for lvl, amt in enumerate(BID_SIZES)
+        ]
+        asks = [
+            th.SideQuote(
+                price=self.round_to_tick(
+                    self.index + (SPREAD + ASK_STEP * lvl) * self.tick
+                ),
+                amount=amt,
+            )
+            for lvl, amt in enumerate(ASK_SIZES)
+        ]
+        return [bids, asks]
 
     # This is the task that creates the quotes and pushes them to thalex.
     async def quote_task(self):
@@ -296,7 +303,6 @@ class PerpQuoter:
             if t["label"] == LABEL:
                 logging.info(f"Trade: {t['direction']} {t['amount']} @ {t['price']}")
 
-
     async def order_error(self, error, oid):
         logging.error(f"Error with order({oid}): {error}")
         for side in [0, 1]:
@@ -326,7 +332,6 @@ class PerpQuoter:
     # This is where we keep track of their actual statuses.
     def orders_callback(self, orders: List[Dict]):
         for o in orders:
-            o["fills"]
             if not self.update_order(order_from_data(o)):
                 logging.error(f"Didn't find order {o}")
 
