@@ -13,7 +13,7 @@ from typing import Union, Dict, Optional, List
 import enum
 import websockets
 
-import thalex_py
+import thalex as th
 import keys  # Rename _keys.py to keys.py and add your keys. There are instructions how to create keys in that file.
 
 
@@ -53,7 +53,7 @@ MAX_POSITION = 1.0  # Maximum absolute position of any instrument
 # you should give them different labels.
 LABEL = "R"
 TRADE_LOG = "trades_rolls.log"  # File path for logging trades
-NETWORK = thalex_py.Network.TEST
+NETWORK = th.Network.TEST
 
 
 # We'll use these to match responses from thalex to the corresponding request.
@@ -118,12 +118,12 @@ class Order:
         self,
         oid: int,  # needs to be unique per order within the session
         price: float,
-        side: thalex_py.Direction,
+        side: th.Direction,
         status: Optional[OrderStatus] = None,
     ):
         self.id: int = oid
         self.price: float = price
-        self.side: thalex_py.Direction = side
+        self.side: th.Direction = side
         self.status: Optional[OrderStatus] = status
 
     def is_open(self):
@@ -136,8 +136,8 @@ class Order:
 
 # This converts the json representation of an order returned by thalex into our Order data structure
 def order_from_data(data: Dict) -> Order:
-    side = thalex_py.Direction(data["direction"])
-    price = data.get("price", 0 if side == thalex_py.Direction.SELL else float("inf"))
+    side = th.Direction(data["direction"])
+    price = data.get("price", 0 if side == th.Direction.SELL else float("inf"))
     return Order(
         oid=data["client_order_id"],
         price=price,
@@ -150,7 +150,7 @@ def order_from_data(data: Dict) -> Order:
 class Trade:
     def __init__(self, data: Dict):
         self.instrument: str = data["instrument_name"]
-        self.direction = thalex_py.Direction(data["direction"])
+        self.direction = th.Direction(data["direction"])
         self.amount: float = data["amount"]
         self.price: float = data["price"]
         self.pos_after: float = data.get("position_after", 0.0)
@@ -189,8 +189,8 @@ def round_to_tick(value, tick):
 
 
 # We use lists like [bid, ask] in some places. This helps indexing into those.
-def side_idx(side: thalex_py.Direction):
-    return 0 if side == thalex_py.Direction.BUY else 1
+def side_idx(side: th.Direction):
+    return 0 if side == th.Direction.BUY else 1
 
 
 # We log the results to different requests at a different level to improve log readability
@@ -293,7 +293,7 @@ class PerpData:
 # The quote prices are calculated in pricing().
 # We'll adjust our quotes if there's a notification in the perpetual ticker or index channels or if we trade.
 class RollQuoter:
-    def __init__(self, thalex: thalex_py.Thalex, network: thalex_py.Network):
+    def __init__(self, thalex: th.Thalex, network: th.Network):
         self.thalex = thalex
         self.network = network
         self.futures: Dict[str, FutureData] = {}
@@ -397,8 +397,8 @@ class RollQuoter:
             quote = self.pricing(roll, now)  # [bid, ask]
             logging.debug(f"Quotes for {roll.instrument}: {quote}")
             for idx, side in [
-                (0, thalex_py.Direction.BUY),
-                (1, thalex_py.Direction.SELL),
+                (0, th.Direction.BUY),
+                (1, th.Direction.SELL),
             ]:
                 price = quote[idx]
                 sent = roll.prices_sent[idx]
@@ -516,7 +516,7 @@ class RollQuoter:
             i = self.rolls.get(o["instrument_name"])
             if i is None or o.get("label", "-") != LABEL:
                 continue
-            side_ind = side_idx(thalex_py.Direction(o["direction"]))
+            side_ind = side_idx(th.Direction(o["direction"]))
             o = order_from_data(o)
             i.orders[side_ind] = o
             if not i.orders[side_ind].is_open():
@@ -672,10 +672,10 @@ class RollQuoter:
 # This is our main task, where we keep (re)initializing the thalex connector and the roll quoter,
 # and run the necessary tasks. If anything goes wrong, we'll just reinitialize everything,
 # reconnect to thalex and start quoting again.
-async def reconnect_and_quote_forever(network: thalex_py.Network):
+async def reconnect_and_quote_forever(network: th.Network):
     keep_going = True  # We set this to false when we want to stop
     while keep_going:
-        thalex = thalex_py.Thalex(network=network)
+        thalex = th.Thalex(network=network)
         roll_quoter = RollQuoter(thalex, network)
         try:
             logging.info(f"STARTING on {network.value} {UNDERLYING=}, {MAX_DTE=}")

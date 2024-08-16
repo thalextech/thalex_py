@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Optional, Dict
 
-import thalex_py as th
+import thalex as th
 import keys
 
 # In this example we're looking for arbitrage opportunities, by trying to find a synthetic future ask/bid,

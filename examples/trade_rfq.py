@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 
-import thalex_py as th
+import thalex as th
 import keys
 
 NETWORK = th.Network.TEST

@@ -9,7 +9,7 @@ from typing import Union, Dict, Optional, List
 import enum
 import websockets
 
-import thalex_py as th
+import thalex as th
 import keys  # Rename _keys.py to keys.py and add your keys. There are instructions how to create keys in that file.
 
 # The main idea behind this example is to demonstrate how thalex_py can be used to quote the perpetual on Thalex.
