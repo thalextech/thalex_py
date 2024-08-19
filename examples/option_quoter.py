@@ -11,8 +11,8 @@ from typing import Union, Dict, Optional, List
 import enum
 import websockets
 
-import thalex_py
-import black_scholes
+import thalex as th
+import thalex.black_scholes as black_scholes
 import keys  # Rename _keys.py to keys.py and add your keys. There are instructions how to create keys in that file.
 
 
@@ -53,7 +53,7 @@ LABEL = "X"
 TRADE_LOG = "trades_options.log"  # File path for logging trades
 GREEKS_CALC_PERIOD = 30  # We'll recalculate portfolio greeks and pricing skews every GREEKS_PRINT_PERIOD seconds.
 GREEKS_PRINT_PERIOD = 600  # We'll print portfolio greeks and pricing skews every GREEKS_PRINT_PERIOD seconds.
-NETWORK = thalex_py.Network.TEST
+NETWORK = th.Network.TEST
 
 # We'll use these to match responses from thalex to the corresponding request.
 # The numbers are arbitrary, but they need to be unique per CALL_ID.
@@ -107,12 +107,12 @@ class Order:
         self,
         oid: int,  # needs to be unique per order within the session
         price: float,
-        side: thalex_py.Direction,
+        side: th.Direction,
         status: Optional[OrderStatus] = None,
     ):
         self.id: int = oid
         self.price: float = price
-        self.side: thalex_py.Direction = side
+        self.side: th.Direction = side
         self.status: Optional[OrderStatus] = status
 
     def is_open(self):
@@ -125,8 +125,8 @@ class Order:
 
 # This converts the json representation of an order returned by thalex into our Order data structure
 def order_from_data(data: Dict) -> Order:
-    side: thalex_py.Direction = thalex_py.Direction(data["direction"])
-    price: float = data.get("price", 0 if side == thalex_py.Direction.SELL else float("inf"))
+    side: th.Direction = th.Direction(data["direction"])
+    price: float = data.get("price", 0 if side == th.Direction.SELL else float("inf"))
     return Order(
         oid=data["client_order_id"],
         price=price,
@@ -139,7 +139,7 @@ def order_from_data(data: Dict) -> Order:
 class Trade:
     def __init__(self, data: Dict):
         self.instrument: str = data["instrument_name"]
-        self.direction: thalex_py.Direction = thalex_py.Direction(data["direction"])
+        self.direction: th.Direction = th.Direction(data["direction"])
         self.amount: float = data["amount"]
         self.price: float = data["price"]
         self.pos_after: float = data.get("position_after", 0.0)
@@ -224,8 +224,8 @@ class UnquotedInstrument:
 
 
 # We use lists like [bid, ask] in some places. This helps indexing into those.
-def side_idx(side: thalex_py.Direction):
-    return 0 if side == thalex_py.Direction.BUY else 1
+def side_idx(side: th.Direction):
+    return 0 if side == th.Direction.BUY else 1
 
 
 # To align the price with instrument tick size.
@@ -238,9 +238,9 @@ def round_to_tick(value, tick):
 # The quote prices are calculated in pricing().
 # We'll adjust our quotes if there's a notification in a ticker channel or if we trade.
 class OptionQuoter:
-    def __init__(self, thalex: thalex_py.Thalex, network: thalex_py.Network):
-        self.thalex: thalex_py.Thalex = thalex
-        self.network: thalex_py.Network = network
+    def __init__(self, thalex: th.Thalex, network: th.Network):
+        self.thalex: th.Thalex = thalex
+        self.network: th.Network = network
         self.options: Dict[str, InstrumentData] = {}
         self.unquoted_instruments: Dict[str, UnquotedInstrument] = {}
         self.client_order_id: int = 100
@@ -403,7 +403,7 @@ class OptionQuoter:
     # and what we know about the status of our already open orders for the instrument (if any).
     async def adjust_quotes(self, i: InstrumentData):
         quote_prices = self.pricing(i)  # The [bid, ask] we ideally want to have as open orders
-        for idx, side in [(0, thalex_py.Direction.BUY), (1, thalex_py.Direction.SELL)]:
+        for idx, side in [(0, th.Direction.BUY), (1, th.Direction.SELL)]:
             price = quote_prices[idx]
             sent = i.prices_sent[idx]
             if price is None:
@@ -633,7 +633,7 @@ class OptionQuoter:
             i = self.options.get(o["instrument_name"])
             if i is None or o.get("label", "-") != LABEL:
                 continue
-            side_ind = side_idx(thalex_py.Direction(o["direction"]))
+            side_ind = side_idx(th.Direction(o["direction"]))
             o = order_from_data(o)
             if o.id is not None:
                 i.orders[side_ind] = o
@@ -688,7 +688,7 @@ class OptionQuoter:
 async def reconnect_and_quote_forever(network):
     keep_going = True  # We set this to false when we want to stop
     while keep_going:
-        thalex = thalex_py.Thalex(network=network)
+        thalex = th.Thalex(network=network)
         trader = OptionQuoter(thalex, network)
         try:
             logging.info(f"STARTING on {network.value} {UNDERLYING=}, {NUMBER_OF_EXPIRIES_TO_QUOTE=}")

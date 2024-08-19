@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-import thalex_py as th
+import thalex as th
 
 
 async def main():

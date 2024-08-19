@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Optional, Dict
 
-import thalex_py as th
+import thalex as th
 import keys
 
 NETWORK = th.Network.TEST

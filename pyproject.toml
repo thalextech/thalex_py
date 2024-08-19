@@ -1,0 +1,38 @@
+[project]
+name = "thalex"
+version = "0.0.2"
+authors = [
+  {email="thalex_py@thalex.com"},
+]
+maintainers = [
+  {email="thalex_py@thalex.com"},
+]
+description = "Thalex exchange connector"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "websockets>=12.0",
+    "PyJWT>=2.8.0",
+    "cryptography>=42.0.5",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/thalextech/thalex_py"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+include = [
+    "thalex/**/*"
+]
+
+[tool.black]
+line-length = 90

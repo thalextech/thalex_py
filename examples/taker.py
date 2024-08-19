@@ -5,7 +5,7 @@ import os
 import signal
 from typing import Dict, Optional
 
-import thalex_py as th
+import thalex as th
 import keys  # Rename _keys.py to keys.py and add your keys
 
 # This example is a simple taker for a single instrument.
