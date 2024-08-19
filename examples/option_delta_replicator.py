@@ -9,7 +9,7 @@ from typing import Optional, List
 import websockets
 
 import keys
-import thalex_py as th
+import thalex as th
 
 # This is the option that we want to track the deltas of, by buying/selling perpetual with ioc market orders.
 # We aim to have a perpetual position that's equal to the deltas of this option. At maturity the options should have

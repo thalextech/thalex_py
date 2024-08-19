@@ -36,7 +36,7 @@ create api keys on thalex ui and put them in keys.py.
 See [this guide](https://thalex.com/blog/how-to-run-a-thalex-bot-on-aws) 
 about how you can get a bot up and running in the cloud.
 
-# NFA, your warrany is void
+# NFA, your warranty is void
 
 Feel free to use this library however you want, just remember that nothing is financial advice here and
 nothing comes with warranty.
