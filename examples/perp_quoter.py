@@ -1,8 +1,6 @@
 import asyncio
 import json
 import logging
-import os
-import signal
 import socket
 import time
 from typing import Union, Dict, Optional, List
@@ -26,7 +24,7 @@ UNDERLYING = "BTCUSD"
 LABEL = "P"
 AMEND_THRESHOLD = 5  # ticks
 NETWORK = th.Network.TEST
-SPREAD = 15  # Our best quotes will be index +/- SPREAD * tick size
+SPREAD = 25  # Our best quotes will be index +/- SPREAD * tick size
 BID_STEP = 5  # ticks distance between quote levels
 BID_SIZES = [0.2, 0.4]  # sizes for each quoted level
 ASK_STEP = 5  # ticks distance between quote levels
@@ -125,9 +123,8 @@ def side_idx(side: th.Direction):
 # the quote_task() and the listen_task().
 # The quote are created in make_quotes().
 class PerpQuoter:
-    def __init__(self, thalex: th.Thalex, network: th.Network):
+    def __init__(self, thalex: th.Thalex):
         self.thalex = thalex
-        self.network = network
         self.ticker: Optional[Ticker] = None
         self.index: Optional[float] = None
         self.quote_cv = asyncio.Condition()  # We'll use this to activate the quote_task.
@@ -243,8 +240,8 @@ class PerpQuoter:
         await self.thalex.connect()
         await self.await_instruments()
         await self.thalex.login(
-            keys.key_ids[self.network],
-            keys.private_keys[self.network],
+            keys.key_ids[NETWORK],
+            keys.private_keys[NETWORK],
             id=CALL_ID_LOGIN,
         )
         await self.thalex.set_cancel_on_disconnect(6, id=CALL_ID_SET_COD)
@@ -342,54 +339,39 @@ class PerpQuoter:
             self.portfolio[position["instrument_name"]] = position["position"]
 
 
-async def reconnect_and_quote_forever(network: th.Network):
-    keep_going = True  # We set this to false when we want to stop
-    while keep_going:
-        thalex = th.Thalex(network=network)
-        perp_quoter = PerpQuoter(thalex, network)
-        try:
-            logging.info(f"STARTING on {network.value} {UNDERLYING=}")
-            await asyncio.gather(perp_quoter.listen_task(), perp_quoter.quote_task())
-        except (websockets.ConnectionClosed, socket.gaierror) as e:
-            logging.error(f"Lost connection ({e}). Reconnecting...")
-            time.sleep(0.1)
-            continue
-        except asyncio.CancelledError:
-            keep_going = False
-            if thalex.connected():
-                await thalex.cancel_session(id=CALL_ID_CANCEL_SESSION)
-                while True:
-                    r = await thalex.receive()
-                    r = json.loads(r)
-                    if r.get("id", -1) == CALL_ID_CANCEL_SESSION:
-                        logging.info(f"Cancelled session orders")
-                        break
-                await thalex.disconnect()
-
-
-def handle_signal(evt_loop, task):
-    logging.info("Signal received, stopping...")
-    evt_loop.remove_signal_handler(signal.SIGTERM)
-    evt_loop.remove_signal_handler(signal.SIGINT)
-    task.cancel()
-
-
-def main():
+async def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
     )
-    loop = asyncio.get_event_loop()
-    main_task = loop.create_task(reconnect_and_quote_forever(NETWORK))
+    run = True  # We set this to false when we want to stop
+    while run:
+        thalex = th.Thalex(network=NETWORK)
+        perp_quoter = PerpQuoter(thalex)
+        tasks = [
+            asyncio.create_task(perp_quoter.listen_task()),
+            asyncio.create_task(perp_quoter.quote_task()),
+        ]
+        try:
+            logging.info(f"STARTING on {NETWORK} {UNDERLYING=}")
+            await asyncio.gather(*tasks)
+        except (websockets.ConnectionClosed, socket.gaierror) as e:
+            logging.error(f"Lost connection ({e}). Reconnecting...")
+            time.sleep(0.1)
+        except asyncio.CancelledError:
+            run = False
+        if thalex.connected():
+            await thalex.cancel_session(id=CALL_ID_CANCEL_SESSION)
+            while True:
+                r = await thalex.receive()
+                r = json.loads(r)
+                if r.get("id", -1) == CALL_ID_CANCEL_SESSION:
+                    logging.info(f"Cancelled session orders")
+                    break
+            await thalex.disconnect()
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
-    if os.name != "nt":  # Non-Windows platforms
-        loop.add_signal_handler(signal.SIGTERM, handle_signal, loop, main_task)
-        loop.add_signal_handler(signal.SIGINT, handle_signal, loop, main_task)
-    try:
-        loop.run_until_complete(main_task)
-    finally:
-        loop.close()
 
-
-if __name__ == "__main__":
-    main()
+asyncio.run(main())

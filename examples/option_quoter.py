@@ -3,8 +3,6 @@ import asyncio
 import json
 import logging
 import socket
-import signal
-import os
 import time
 from datetime import datetime, timezone
 from typing import Union, Dict, Optional, List
@@ -29,7 +27,9 @@ import keys  # Rename _keys.py to keys.py and add your keys. There are instructi
 UNDERLYING = "BTCUSD"  # We'll only quote options of this underlying
 NUMBER_OF_EXPIRIES_TO_QUOTE = 1  # More expiries means more quotes, but more throttling
 SUBSCRIBE_INTERVAL = "200ms"  # Also how frequently we adjust quotes
-UNQUOTED_SUBSCRIBE_INTERVAL = "5000ms"  # For tickers of not quoted instruments, only to track greeks
+UNQUOTED_SUBSCRIBE_INTERVAL = (
+    "5000ms"  # For tickers of not quoted instruments, only to track greeks
+)
 DELTA_RANGE_TO_QUOTE = (0.1, 0.8)  # Wider range means more quotes, but more throttling
 SPREAD = 30  # base spread to create a spread around the mark price
 SPREAD_FACTOR = 1.05  # extra spread per cumulative absolute open options deltas
@@ -41,7 +41,9 @@ MAX_MARGIN = 300000  # If the required margin goes above this, we only reduce po
 # If the deltas go outside (-MAX_DELTAS, MAX_DELTAS),
 # we'll only insert quotes that reduce their absolute value.
 MAX_DELTAS = 1.0
-MAX_OPEN_OPTION_DELTAS = 10.0  # As in cumulative absolute deltas across all option positions.
+MAX_OPEN_OPTION_DELTAS = (
+    10.0  # As in cumulative absolute deltas across all option positions.
+)
 DELTA_SKEW = 300  # To skew quote prices for portfolio delta
 VEGA_SKEW = 20  # To skew quote prices for portfolio vega
 GAMMA_SKEW = 4000000  # To skew quote prices for portfolio gamma
@@ -238,9 +240,8 @@ def round_to_tick(value, tick):
 # The quote prices are calculated in pricing().
 # We'll adjust our quotes if there's a notification in a ticker channel or if we trade.
 class OptionQuoter:
-    def __init__(self, thalex: th.Thalex, network: th.Network):
+    def __init__(self, thalex: th.Thalex):
         self.thalex: th.Thalex = thalex
-        self.network: th.Network = network
         self.options: Dict[str, InstrumentData] = {}
         self.unquoted_instruments: Dict[str, UnquotedInstrument] = {}
         self.client_order_id: int = 100
@@ -257,8 +258,8 @@ class OptionQuoter:
     async def greeks_task(self):
         await self.thalex.connect()
         await self.thalex.login(
-            keys.key_ids[self.network],
-            keys.private_keys[self.network],
+            keys.key_ids[NETWORK],
+            keys.private_keys[NETWORK],
             id=CALL_ID_LOGIN,
         )
         await self.thalex.set_cancel_on_disconnect(6, id=CALL_ID_SET_COD)
@@ -312,7 +313,9 @@ class OptionQuoter:
             if i.instrument.type == InstrumentType.OPTION:
                 # Thalex doesn't give us all the greeks, only delta, so we'll use the Black and Scholes model
                 # to calculate the rest of the greeks for this instrument ourselves.
-                maturity = (i.instrument.expiry_ts - i.ticker.mark_ts) / (365.25 * 24 * 3600)
+                maturity = (i.instrument.expiry_ts - i.ticker.mark_ts) / (
+                    365.25 * 24 * 3600
+                )
                 i.greeks = black_scholes.all_greeks(
                     i.ticker.fwd,
                     i.instrument.strike_price,
@@ -402,13 +405,17 @@ class OptionQuoter:
     # Insert/Amend/Cancel our bid & ask for one instrument based on the quotes pricing() comes up with,
     # and what we know about the status of our already open orders for the instrument (if any).
     async def adjust_quotes(self, i: InstrumentData):
-        quote_prices = self.pricing(i)  # The [bid, ask] we ideally want to have as open orders
+        quote_prices = self.pricing(
+            i
+        )  # The [bid, ask] we ideally want to have as open orders
         for idx, side in [(0, th.Direction.BUY), (1, th.Direction.SELL)]:
             price = quote_prices[idx]
             sent = i.prices_sent[idx]
             if price is None:
                 # We don't want to quote this side of this instrument
-                if sent is not None or (i.orders[idx] is not None and i.orders[idx].is_open()):
+                if sent is not None or (
+                    i.orders[idx] is not None and i.orders[idx].is_open()
+                ):
                     # We have an open order that we want to cancel.
                     # If the order is open because the previous cancel was not yet processed, we might be trying to
                     # delete it twice, but that should be rare and even then it's better to be safe than sorry.
@@ -426,7 +433,9 @@ class OptionQuoter:
                 client_order_id = self.client_order_id
                 self.client_order_id = self.client_order_id + 1
                 i.orders[idx] = Order(client_order_id, price, side)
-                logging.debug(f"Insert {client_order_id} {i.instrument.name} {side.value} {price}")
+                logging.debug(
+                    f"Insert {client_order_id} {i.instrument.name} {side.value} {price}"
+                )
                 await self.thalex.insert(
                     direction=side,
                     instrument_name=i.instrument.name,
@@ -442,7 +451,9 @@ class OptionQuoter:
                 # We only amend if the difference is large enough, to avoid throttling.
                 i.prices_sent[idx] = price
                 client_order_id = i.orders[idx].id
-                logging.debug(f"Amend {client_order_id} {i.instrument.name} {side.value} {sent} -> {price}")
+                logging.debug(
+                    f"Amend {client_order_id} {i.instrument.name} {side.value} {sent} -> {price}"
+                )
                 await self.thalex.amend(
                     amount=LOTS,
                     price=price,
@@ -466,11 +477,15 @@ class OptionQuoter:
                             # We tried to cancel something that's not there. It might have been canceled
                             # or filled before our cancel request was processed.
                             # We don't need to do anything.
-                            logging.info(f"{order} already filled/cancelled for {idata.instrument}")
+                            logging.info(
+                                f"{order} already filled/cancelled for {idata.instrument}"
+                            )
                         else:
                             # We failed to pull an order for some other reason. That's bad.
                             # Best we can do is try again immediately
-                            logging.error(f"Failed to cancel {order} for {idata.instrument}: {error}")
+                            logging.error(
+                                f"Failed to cancel {order} for {idata.instrument}: {error}"
+                            )
                             await self.thalex.cancel(
                                 client_order_id=oid,
                                 id=oid,
@@ -479,7 +494,9 @@ class OptionQuoter:
                         # We don't have an open order. We'll leave it at that for now and insert one later.
                         idata.prices_sent[side] = None
                         if error["code"] == ERROR_CODE_THROTTLE:
-                            logging.info(f"Insert {order} @{sent} {idata.instrument.name} throttled")
+                            logging.info(
+                                f"Insert {order} @{sent} {idata.instrument.name} throttled"
+                            )
                         else:
                             # If it's not just throttling, let's show some elaborate logs
                             # to be able to analyze what was wrong with the order.
@@ -493,14 +510,19 @@ class OptionQuoter:
                         if error["code"] == ERROR_CODE_THROTTLE:
                             # If you see this a lot, you should decrease NUMBER_OF_EXPIRIES_TO_QUOTE or
                             # DELTA_RANGE_TO_QUOTE or increase AMEND_THRESHOLD in order to amend less frequently.
-                            logging.info(f"Amend {order} for {idata.instrument} -> {sent} throttled")
+                            logging.info(
+                                f"Amend {order} for {idata.instrument} -> {sent} throttled"
+                            )
                         else:
                             logging.warning(
                                 f"Failed to amend {order} for {idata.instrument} -> {sent}: {error}\n"
                                 f"mark={idata.ticker.mark_price:.4f} {self.spread=:.4f} {self.d_skew=:.4f}"
                                 f"{self.g_skew=:.4f} {self.v_skew=:.4f} {idata.retreat=:.4f} {idata.greeks=}"
                             )
-                        if abs(order.price - sent) >= 2 * AMEND_THRESHOLD * idata.instrument.tick_size:
+                        if (
+                            abs(order.price - sent)
+                            >= 2 * AMEND_THRESHOLD * idata.instrument.tick_size
+                        ):
                             # The order is open at the wrong price, and we're getting throttled,
                             # so we won't try to amand again, but cancel it for now and reinsert it later.
                             idata.prices_sent[side] = None
@@ -518,14 +540,18 @@ class OptionQuoter:
             msg = json.loads(msg)
             channel = msg.get("channel_name")
             if channel is not None:
-                await self.notification(channel, msg["notification"], msg.get("snapshot", False))
+                await self.notification(
+                    channel, msg["notification"], msg.get("snapshot", False)
+                )
             elif "result" in msg:
                 result_callback(msg["result"], msg["id"])
             else:
                 await self.error_callback(msg["error"], msg["id"])
 
     # This is where we handle notifications in the channels we have subscribed to.
-    async def notification(self, channel: str, notification: Union[Dict, List], snapshot: bool):
+    async def notification(
+        self, channel: str, notification: Union[Dict, List], snapshot: bool
+    ):
         if channel.startswith("ticker."):
             # https://www.thalex.com/docs/#tag/subs_market_data/Ticker
             iname = channel.split(".")[1]
@@ -577,7 +603,9 @@ class OptionQuoter:
                         # If we're not yet subscribed to this instrument's ticker let's subscribe now,
                         # so that we get the necessary data for greeks calculations.
                         await self.thalex.public_subscribe(
-                            [f"ticker.{unq.instrument.name}.{UNQUOTED_SUBSCRIBE_INTERVAL}"],
+                            [
+                                f"ticker.{unq.instrument.name}.{UNQUOTED_SUBSCRIBE_INTERVAL}"
+                            ],
                             id=CALL_ID_SUBSCRIBE,
                         )
                         unq.subbed = True
@@ -588,7 +616,9 @@ class OptionQuoter:
     def account_summary(self, acc_sum: Dict):
         required_margin = acc_sum["required_margin"]
         if required_margin > MAX_MARGIN and not self.close_only:
-            logging.warning(f"Required margin: {required_margin}. Going into close only mode.")
+            logging.warning(
+                f"Required margin: {required_margin}. Going into close only mode."
+            )
             self.close_only = True
         # We need some factor here, because there's some margin required for open orders, so if we start quoting
         # immediately after we go below our decided margin limits, we'll just flicker the close_only back and forth.
@@ -619,7 +649,9 @@ class OptionQuoter:
         self.recalc_greeks()
         # lines being empty means none of the trades were done by this quoter, so we won't log them.
         if len(lines) > 0:
-            now = datetime.utcfromtimestamp(utcnow()).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            now = datetime.utcfromtimestamp(utcnow()).strftime("%Y-%m-%d %H:%M:%S.%f")[
+                :-3
+            ]
             with open(TRADE_LOG, "a") as file:
                 for line in lines:
                     logging.info(f"Traded {line}")
@@ -664,7 +696,9 @@ class OptionQuoter:
         instruments = [i for i in instruments if i.underlying == UNDERLYING]
 
         # Filter the options in the expiries that we want to quote
-        expiries = list(set([i.expiry_ts for i in instruments if i.type == InstrumentType.OPTION]))
+        expiries = list(
+            set([i.expiry_ts for i in instruments if i.type == InstrumentType.OPTION])
+        )
         expiries.sort()
         expiries = expiries[:NUMBER_OF_EXPIRIES_TO_QUOTE]
 
@@ -678,74 +712,64 @@ class OptionQuoter:
 
         # Subscribe to the tickers of the options we want to quote.
         # We'll subscribe to the tickers of the not quoted instruments later, only if we have a position in those.
-        subs = [f"ticker.{opt.instrument.name}.{SUBSCRIBE_INTERVAL}" for opt in self.options.values()]
+        subs = [
+            f"ticker.{opt.instrument.name}.{SUBSCRIBE_INTERVAL}"
+            for opt in self.options.values()
+        ]
         await self.thalex.public_subscribe(subs, CALL_ID_SUBSCRIBE)
 
 
 # This is our main task, where we keep (re)initializing the thalex connector and the option quoter,
 # and run the necessary tasks. If anything goes wrong, we'll just reinitialize everything,
 # reconnect to thalex and start quoting again.
-async def reconnect_and_quote_forever(network):
-    keep_going = True  # We set this to false when we want to stop
-    while keep_going:
-        thalex = th.Thalex(network=network)
-        trader = OptionQuoter(thalex, network)
+async def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+    )
+    run = True  # We set this to false when we want to stop
+    while run:
+        thalex = th.Thalex(network=NETWORK)
+        trader = OptionQuoter(thalex)
+        tasks = [
+            asyncio.create_task(trader.listen_task()),
+            asyncio.create_task(trader.greeks_task()),
+        ]
         try:
-            logging.info(f"STARTING on {network.value} {UNDERLYING=}, {NUMBER_OF_EXPIRIES_TO_QUOTE=}")
-            await asyncio.gather(trader.listen_task(), trader.greeks_task())
+            logging.info(
+                f"STARTING on {NETWORK} {UNDERLYING=}, {NUMBER_OF_EXPIRIES_TO_QUOTE=}"
+            )
+            await asyncio.gather(*tasks)
         except (websockets.ConnectionClosed, socket.gaierror) as e:
             # It can (and does) happen that we lose connection for whatever reason. If it happens We wait a little,
             # so that if the connection loss is persistent, we don't just keep trying in a hot loop, then reconnect.
             # An exponential backoff would be nicer.
             logging.error(f"Lost connection ({e}). Reconnecting...")
             time.sleep(0.1)
-            continue
         except InstrumentsChanged as e:
             # See the comment at the definition of InstrumentsChanged for an explanation of what's happening here.
             logging.warning(e.message)
             time.sleep(7)
-            continue
         except asyncio.CancelledError:
             # This means we are stopping the program from the outside (eg Ctrl+C on OSX/Linux)
-            # Set the keep going flag to False, and if we're still connected disconnect and actively cancel our orders
-            # in this session instead of letting cancel_on_disconnect kick in.
-            keep_going = False
-            if thalex.connected():
-                # We want to call cancel_session instead of cancel_all here,
-                # so that the orders created by other bots or manually on the ui are left alone.
-                await thalex.cancel_session(id=CALL_ID_CANCEL_SESSION)
-                while True:
-                    r = await thalex.receive()
-                    r = json.loads(r)
-                    if r.get("id", -1) == CALL_ID_CANCEL_SESSION:
-                        logging.info(f"Cancelled session orders")
-                        break
-                await thalex.disconnect()
+            # Set the run flag to False
+            run = False
+        # if we're still connected, actively cancel our orders in this session and disconnect,
+        # instead of waiting for cancel_on_disconnect kick in.
+        if thalex.connected():
+            # We want to call cancel_session instead of cancel_all here,
+            # so that the orders created by other bots or manually on the ui are left alone.
+            await thalex.cancel_session(id=CALL_ID_CANCEL_SESSION)
+            while True:
+                r = await thalex.receive()
+                r = json.loads(r)
+                if r.get("id", -1) == CALL_ID_CANCEL_SESSION:
+                    logging.info(f"Cancelled session orders")
+                    break
+            await thalex.disconnect()
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
-# This is what we want to happen when we get a signal from Ctrl+C or kill (cancel the task and shut down gracefully)
-def handle_signal(evt_loop, task):
-    logging.info("Signal received, stopping...")
-    evt_loop.remove_signal_handler(signal.SIGTERM)
-    evt_loop.remove_signal_handler(signal.SIGINT)
-    task.cancel()
-
-
-def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
-    )
-    loop = asyncio.get_event_loop()
-    main_task = loop.create_task(reconnect_and_quote_forever(NETWORK))
-    if os.name != "nt":  # Non-Windows platforms
-        loop.add_signal_handler(signal.SIGTERM, handle_signal, loop, main_task)
-        loop.add_signal_handler(signal.SIGINT, handle_signal, loop, main_task)
-    try:
-        loop.run_until_complete(main_task)
-    finally:
-        loop.close()
-
-
-if __name__ == "__main__":
-    main()
+asyncio.run(main())
