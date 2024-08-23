@@ -4,7 +4,7 @@ import json
 import logging
 import socket
 import time
-from typing import Optional, List
+from typing import Optional
 
 import websockets
 
@@ -16,7 +16,7 @@ import thalex as th
 # a delta of either 1 or 0, so we will have either a full perpetual contract (similarly to if an option with physical
 # delivery expired in the money), or no perpetual position at all (in case the option expires out of the money).
 # Ultimately this strategy should have the same payout as entering a position of one contract long of this option.
-OPTION = "BTC-16AUG24-60000-C"
+OPTION = "BTC-23AUG24-60000-C"
 # The ticker subscription channel of the option we're tracking. 1s delay is good enough for the sake of this exercise.
 OPTION_TICKER = f"ticker.{OPTION}.1000ms"
 # The name of the perpetual contract of the underlying of the option.
@@ -58,7 +58,7 @@ class OptionDeltaReplicator:
         # Not ideal, but it's simple and will work fine for this usecase.
         self.last_order_ts: float = 0
 
-    def flush_data(self, trades, error = None):
+    def flush_data(self, trades, error=None):
         # This is the format of the data we want for parsing later to calculate total pnl (not in this script).
         data = {
             "trades": trades,
@@ -91,7 +91,10 @@ class OptionDeltaReplicator:
             fills = result["fills"]
             direction = result["direction"]
             side_sign = 1 if direction == "buy" else -1
-            trades = [{"direction": direction, "price": f['price'], "amount": f['amount']} for f in fills]
+            trades = [
+                {"direction": direction, "price": f["price"], "amount": f["amount"]}
+                for f in fills
+            ]
             logging.info(f"Traded {trades}")
             for fill in fills:
                 self.delta_actual += side_sign * fill["amount"]
@@ -108,6 +111,16 @@ class OptionDeltaReplicator:
                 self.delta_actual = 0
 
     async def replicate(self):
+        await self.thalex.connect()
+        await self.thalex.login(KEY_ID, PRIV_KEY)
+        # Setting cancel on disconnect doesn't matter, because we will be using ioc market orders,
+        # but it gives us an elevated message rate.
+        await self.thalex.set_cancel_on_disconnect(5)
+        # We need the option ticker to track the deltas of the option that we want to replicate.
+        # We need the perpetual subscription only for logging the mark price of the perpetual.
+        await self.thalex.public_subscribe([OPTION_TICKER, PERP_TICKER])
+        # We call portfolio once, to start tracking our perpetual position.
+        await self.thalex.portfolio(CID_PORTFOLIO)
         while True:
             msg = json.loads(await self.thalex.receive())
             # If there's an error, just log it and carry on.
@@ -152,21 +165,13 @@ async def main():
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
     )
-    while True:
+    run = True
+    while run:
         thalex = th.Thalex(NETWORK)
+        replicator = OptionDeltaReplicator(thalex)
+        task = asyncio.create_task(replicator.replicate())
         try:
-            await thalex.connect()
-            await thalex.login(KEY_ID, PRIV_KEY)
-            # Setting cancel on disconnect doesn't matter, because we will be using ioc market orders,
-            # but it gives us an elevated message rate.
-            await thalex.set_cancel_on_disconnect(5)
-            # We need the option ticker to track the deltas of the option that we want to replicate.
-            # We need the perpetual subscription only for logging the mark price of the perpetual.
-            await thalex.public_subscribe([OPTION_TICKER, PERP_TICKER])
-            # We call portfolio once, to start tracking our perpetual position.
-            await thalex.portfolio(CID_PORTFOLIO)
-            replicator = OptionDeltaReplicator(thalex)
-            await replicator.replicate()
+            await task
         except (websockets.ConnectionClosed, socket.gaierror):
             # It can (and does) happen that we lose connection for whatever reason. If it happens We wait a little,
             # so that if the connection loss is persistent, we don't just keep trying in a hot loop, then reconnect.
@@ -176,9 +181,11 @@ async def main():
         except asyncio.CancelledError:
             # This means we are stopping the program from the outside (eg Ctrl+C on OSX/Linux)
             logging.info("Signal received. Stopping...")
-            if thalex.connected():
-                await thalex.disconnect()
-            return
+            run = False
+        if thalex.connected():
+            await thalex.disconnect()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 asyncio.run(main())

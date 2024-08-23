@@ -88,7 +88,9 @@ def vega(fwd: float, k: float, sigma: float, maturity: float) -> float:
         return 0.0
 
 
-def all_greeks(fwd: float, k: float, sigma: float, maturity: float, is_put: bool, delta=None) -> Greeks:
+def all_greeks(
+    fwd: float, k: float, sigma: float, maturity: float, is_put: bool, delta=None
+) -> Greeks:
     voltime = math.sqrt(maturity) * sigma
     greeks = Greeks(delta)
     if voltime > 0.0:

@@ -117,9 +117,8 @@ async def main():
     thalex = th.Thalex(NETWORK)
     await thalex.connect()
     quoter = RfqQuoter(thalex)
-    tasks = [quoter.quote()]
     try:
-        await asyncio.gather(*tasks)
+        await quoter.quote()
     except:
         logging.exception("There was an oupsie:")
     await thalex.disconnect()

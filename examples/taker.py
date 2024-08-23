@@ -1,8 +1,6 @@
 import asyncio
 import json
 import logging
-import os
-import signal
 from typing import Dict, Optional
 
 import thalex as th
@@ -17,12 +15,12 @@ import keys  # Rename _keys.py to keys.py and add your keys
 
 # If the top of book is in cross with the mark by at least this much, we insert an ioc order
 # Can be negative
-PNL = -100
+PNL = 100
 INSTRUMENT = "ETH-PERPETUAL"  # Name of the instrument we'll try to take
 # To identify the orders and trades of this taker.
 # If you run multiple in bots parallel, you should give them different labels.
 LABEL = "TKR"
-DESIRED_POSITION = 10.5  # We'll keep taking until we get this position.
+DESIRED_POSITION = 5  # We'll keep taking until we get this position.
 NETWORK = th.Network.TEST
 
 # We'll use these to match responses from thalex to the corresponding request.
@@ -43,9 +41,8 @@ class Ticker:
 
 
 class Taker:
-    def __init__(self, network: th.Network):
-        self.network: th.Network = network
-        self.thalex: th.Thalex = th.Thalex(self.network)
+    def __init__(self, thalex: th.Thalex):
+        self.thalex: th.Thalex = thalex
         # >0 means we want to buy, <0 means we want to sell
         self.remaining_amount: Optional[float] = None
         # After inserting an ioc order, we wait for its result to avoid taking twice
@@ -74,13 +71,17 @@ class Taker:
             direction = th.Direction.BUY
             price = ticker.best_ask
             if price is not None and price < ticker.mark_price - PNL:
-                logging.info(f"Buying {self.remaining_amount:.2f}@{price} mark: {ticker.mark_price:.1f}")
+                logging.info(
+                    f"Buying {self.remaining_amount:.2f}@{price} mark: {ticker.mark_price:.1f}"
+                )
                 await self.insert_order(direction, price)
         elif self.remaining_amount < 0:
             direction = th.Direction.SELL
             price = ticker.best_bid
             if price is not None and price > ticker.mark_price + PNL:
-                logging.info(f"Selling {self.remaining_amount:.2f}@{price} mark: {ticker.mark_price:.1f}")
+                logging.info(
+                    f"Selling {self.remaining_amount:.2f}@{price} mark: {ticker.mark_price:.1f}"
+                )
                 await self.insert_order(direction, price)
         else:
             logging.info("Portfolio position is already as desired")
@@ -89,12 +90,14 @@ class Taker:
     async def take(self):
         await self.thalex.connect()
         await self.thalex.login(
-            keys.key_ids[self.network],
-            keys.private_keys[self.network],
+            keys.key_ids[NETWORK],
+            keys.private_keys[NETWORK],
             id=CALL_ID_LOGIN,
         )
         await self.thalex.set_cancel_on_disconnect(6, id=CALL_ID_SET_COD)
-        await self.thalex.public_subscribe([f"ticker.{INSTRUMENT}.raw"], id=CALL_ID_SUBSCRIBE)
+        await self.thalex.public_subscribe(
+            [f"ticker.{INSTRUMENT}.raw"], id=CALL_ID_SUBSCRIBE
+        )
         # We will also monitor the portfolio channel, in case our position changes as a result
         # of trades not originating from this taker.
         await self.thalex.private_subscribe([f"account.portfolio"], id=CALL_ID_SUBSCRIBE)
@@ -109,7 +112,9 @@ class Taker:
                 elif channel == "account.portfolio":
                     for position in msg["notification"]:
                         if position["instrument_name"] == INSTRUMENT:
-                            self.remaining_amount = DESIRED_POSITION - position["position"]
+                            self.remaining_amount = (
+                                DESIRED_POSITION - position["position"]
+                            )
                             if self.remaining_amount == 0:
                                 logging.info("Portfolio position is as desired")
                                 await self.thalex.disconnect()
@@ -146,31 +151,29 @@ class Taker:
                 logging.error(msg)
 
 
-# This is what we want to happen when we get a signal from Ctrl+C or kill (cancel the task and shut down gracefully)
-def handle_signal(evt_loop, task):
-    logging.info("Signal received, stopping...")
-    evt_loop.remove_signal_handler(signal.SIGTERM)
-    evt_loop.remove_signal_handler(signal.SIGINT)
-    task.cancel()
-
-
-def main():
+async def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
     )
-    taker = Taker(NETWORK)
-    loop = asyncio.get_event_loop()
-    main_task = loop.create_task(taker.take())
+    run = True
+    while run:
+        thalex = th.Thalex(NETWORK)
+        taker = Taker(thalex)
+        task = asyncio.create_task(taker.take())
+        try:
+            await task
+        except asyncio.CancelledError:
+            logging.info("Signal received. Stopping...")
+            # This means we are stopping the program from the outside (eg Ctrl+C on OSX/Linux)
+            # Set the run flag to False
+            run = False
+        except:
+            logging.exception("There was an oupsie:")
+        if thalex.connected():
+            await thalex.disconnect()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
-    if os.name != "nt":  # Non-Windows platforms
-        loop.add_signal_handler(signal.SIGTERM, handle_signal, loop, main_task)
-        loop.add_signal_handler(signal.SIGINT, handle_signal, loop, main_task)
-    try:
-        loop.run_until_complete(main_task)
-    finally:
-        loop.close()
 
-
-if __name__ == "__main__":
-    main()
+asyncio.run(main())

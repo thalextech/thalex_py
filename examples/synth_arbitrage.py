@@ -16,7 +16,7 @@ import keys
 
 
 NETWORK = th.Network.TEST
-EXPIRY = "2024-06-04"
+EXPIRY = "2024-08-23"
 UNDERLYING = "BTCUSD"
 LABEL = "SA"
 MIN_PNL = 100
@@ -103,6 +103,7 @@ class SynthArbitrage:
         await self.thalex.public_subscribe(tickers, CID_SUBSCRIBE)
 
     async def listen(self):
+        await self.thalex.connect()
         await self.load_instruments()
         await self.thalex.login(
             keys.key_ids[NETWORK], keys.private_keys[NETWORK], id=CID_LOGIN
@@ -257,15 +258,24 @@ async def main():
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
     )
-    thalex = th.Thalex(NETWORK)
-    await thalex.connect()
-    sa = SynthArbitrage(thalex)
-    tasks = [sa.listen(), sa.execute()]
-    try:
-        await asyncio.gather(*tasks)
-    except:
-        logging.exception("There was an oupsie:")
-    await thalex.disconnect()
+    run = True
+    while run:
+        thalex = th.Thalex(NETWORK)
+        sa = SynthArbitrage(thalex)
+        tasks = [asyncio.create_task(sa.listen()), asyncio.create_task(sa.execute())]
+        try:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            # This means we are stopping the program from the outside (eg Ctrl+C on OSX/Linux)
+            # Set the run flag to False
+            run = False
+        except:
+            logging.exception("There was an oupsie:")
+        if thalex.connected():
+            await thalex.disconnect()
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 asyncio.run(main())
