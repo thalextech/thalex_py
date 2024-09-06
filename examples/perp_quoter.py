@@ -297,7 +297,8 @@ class PerpQuoter:
     # We log the trades that have the label we use in this quoter.
     def trades_callback(self, trades):
         for t in trades:
-            if t["label"] == LABEL:
+            label = t.get("label") or ""
+            if label == LABEL:
                 logging.info(f"Trade: {t['direction']} {t['amount']} @ {t['price']}")
 
     async def order_error(self, error, oid):
@@ -360,6 +361,8 @@ async def main():
             time.sleep(0.1)
         except asyncio.CancelledError:
             run = False
+        except:
+            logging.exception("There was an unexpected error:")
         if thalex.connected():
             await thalex.cancel_session(id=CALL_ID_CANCEL_SESSION)
             while True:
