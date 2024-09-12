@@ -5,6 +5,7 @@ import logging
 import socket
 import time
 from typing import Optional
+import datetime
 
 import websockets
 
@@ -16,7 +17,7 @@ import thalex as th
 # a delta of either 1 or 0, so we will have either a full perpetual contract (similarly to if an option with physical
 # delivery expired in the money), or no perpetual position at all (in case the option expires out of the money).
 # Ultimately this strategy should have the same payout as entering a position of one contract long of this option.
-OPTION = "BTC-23AUG24-60000-C"
+OPTION = "BTC-25OCT24-60000-C"
 # The ticker subscription channel of the option we're tracking. 1s delay is good enough for the sake of this exercise.
 OPTION_TICKER = f"ticker.{OPTION}.1000ms"
 # The name of the perpetual contract of the underlying of the option.
@@ -60,17 +61,31 @@ class OptionDeltaReplicator:
 
     def flush_data(self, trades, error=None):
         # This is the format of the data we want for parsing later to calculate total pnl (not in this script).
-        data = {
-            "trades": trades,
-            "mark_perpetual": self.mark_perp,
-            "mark_option": self.mark_option,
-            "error": error,
-        }
+        time_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         with open("replicator.csv", "a", newline="") as f:
             w = csv.writer(f)
+            data = {
+                "timestamp": time_now,
+                "direction": "",
+                "ticker_UL": PERPETUAL,
+                "amount": "",
+                "price": "",
+                "mark_perpetual": round(self.mark_perp, 3),
+                "perp_position": round(self.delta_actual, 3),
+                "ticker_option": OPTION,
+                "opt_delta": round(self.delta_target, 5),
+                "mark_option": round(self.mark_option, 3),
+                "error": error,
+            }
             if f.tell() == 0:
                 w.writerow(data.keys())
-            w.writerow(data.values())
+            for trade in trades:
+                data.update({
+                    "direction": trade.get("direction"),
+                    "amount": trade.get("amount"),
+                    "price": trade.get("price"),
+                })
+                w.writerow(data.values())
 
     def notification(self, channel, notification):
         if channel == OPTION_TICKER:
@@ -145,6 +160,7 @@ class OptionDeltaReplicator:
         # We need to know the deltas of the option we're tracking and our perpetual position.
         if self.delta_actual is not None and self.delta_target is not None:
             offset = round(self.delta_target - self.delta_actual, 3)
+            logging.info(f"Perp delta: {round(self.delta_actual, 3)} - Option delta: {round(self.delta_target, 3)} - Diff: {offset}")
             # Tracking delta exposure over time would be better, but this is simpler.
             if abs(offset) > HEDGING_BAND:
                 logging.info(
