@@ -1,6 +1,9 @@
 # Intro
 
-This is a free to use python exchange connector library for [thalex](https://www.thalex.com).
+This is a free to use python exchange connector library for [Thalex](https://www.thalex.com).
+
+It is provided free of charge, as is, with no warranties and no recommendations – see MIT license.
+It is not meant to be an advisory tool, nor an inducement, but to lower the development learning curve for users.
 
 See also the [api documentation](https://www.thalex.com/docs/).
 
