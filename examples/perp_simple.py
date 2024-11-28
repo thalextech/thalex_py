@@ -21,7 +21,7 @@ SIZE = 0.1  # Number of contracts to quote
 # If the size of our position is greater than this either side, we don't quote that side.
 # Because we don't actively cancel orders already inserted and due to race conditions in
 # notification channels, in some cases we might overshoot.
-MAX_POSITION = 0.2
+MAX_POSITION = 0.3
 QUOTE_ID = {Direction.BUY: 1001, Direction.SELL: 1002}
 
 
@@ -36,7 +36,7 @@ def round_size(size):
 class PerpQuoter:
     def __init__(self, tlx: thalex.Thalex):
         self.tlx = tlx
-        self.index: Optional[float] = None
+        self.mark: Optional[float] = None
         self.quotes: dict[thalex.Direction, Optional[dict]] = {
             Direction.BUY: {},
             Direction.SELL: {},
@@ -74,15 +74,15 @@ class PerpQuoter:
             )
             self.quotes[side] = {"status": "open", "price": price}
 
-    async def update_quotes(self, new_index):
-        up = self.index is None or new_index > self.index
-        self.index = new_index
+    async def update_quotes(self, new_mark):
+        up = self.mark is None or new_mark > self.mark
+        self.mark = new_mark
         if self.position is None:
             return
 
-        bid_price = round_to_tick(new_index - SPREAD)
+        bid_price = round_to_tick(new_mark - SPREAD)
         bid_size = round_size(max(min(SIZE, MAX_POSITION - self.position), 0))
-        ask_price = round_to_tick(new_index + SPREAD)
+        ask_price = round_to_tick(new_mark + SPREAD)
         ask_size = round_size(max(min(SIZE, MAX_POSITION + self.position), 0))
 
         if up:
@@ -97,8 +97,8 @@ class PerpQuoter:
         if channel == "session.orders":
             for order in notification:
                 self.quotes[Direction(order["direction"])] = order
-        elif channel.startswith("price_index"):
-            await self.update_quotes(notification["price"])
+        elif channel.startswith("lwt"):
+            await self.update_quotes(notification["m"])
         elif channel == "account.portfolio":
             await self.tlx.cancel_session()
             self.quotes = {Direction.BUY: {}, Direction.SELL: {}}
@@ -113,7 +113,7 @@ class PerpQuoter:
         await self.tlx.connect()
         await self.tlx.login(keys.key_ids[NETWORK], keys.private_keys[NETWORK])
         await self.tlx.set_cancel_on_disconnect(6)
-        await self.tlx.public_subscribe([f"price_index.{UNDERLYING}"])
+        await self.tlx.public_subscribe([f"lwt.{PERP}.1000ms"])
         await self.tlx.private_subscribe(["session.orders", "account.portfolio"])
         while True:
             msg = await self.tlx.receive()
