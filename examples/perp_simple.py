@@ -51,10 +51,7 @@ class PerpQuoter:
             "partially_filled",
         ]
         if is_open:
-            if amount == 0:
-                logging.info(f"Cancelling {side}")
-                await self.tlx.cancel(client_order_id=QUOTE_ID[side], id=QUOTE_ID[side])
-            elif abs(confirmed["price"] - price) > AMEND_THRESHOLD:
+            if amount == 0 or abs(confirmed["price"] - price) > AMEND_THRESHOLD:
                 logging.info(f"Amending {side} to {amount} @ {price}")
                 await self.tlx.amend(
                     amount=amount,
