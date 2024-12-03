@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import socket
+import sys
 import time
 from typing import Optional
 import websockets
@@ -51,10 +52,7 @@ class PerpQuoter:
             "partially_filled",
         ]
         if is_open:
-            if amount == 0:
-                logging.info(f"Cancelling {side}")
-                await self.tlx.cancel(client_order_id=QUOTE_ID[side], id=QUOTE_ID[side])
-            elif abs(confirmed["price"] - price) > AMEND_THRESHOLD:
+            if amount == 0 or abs(confirmed["price"] - price) > AMEND_THRESHOLD:
                 logging.info(f"Amending {side} to {amount} @ {price}")
                 await self.tlx.amend(
                     amount=amount,
@@ -86,21 +84,23 @@ class PerpQuoter:
         ask_size = round_size(max(min(SIZE, MAX_POSITION + self.position), 0))
 
         if up:
+            # Insert Sell before Buy to avoid self-trades if new ask price is lower than existing bid
             await self.adjust_order(Direction.SELL, price=ask_price, amount=ask_size)
             await self.adjust_order(Direction.BUY, price=bid_price, amount=bid_size)
         else:
+            # Insert Buy before Sell to avoid self-trades if new bid price is higher than existing ask
             await self.adjust_order(Direction.BUY, price=bid_price, amount=bid_size)
             await self.adjust_order(Direction.SELL, price=ask_price, amount=ask_size)
 
     async def handle_notification(self, channel: str, notification):
-        logging.debug(f"notificaiton in channel {channel} {notification}")
+        logging.debug(f"notification in channel {channel} {notification}")
         if channel == "session.orders":
             for order in notification:
                 self.quotes[Direction(order["direction"])] = order
         elif channel.startswith("lwt"):
             await self.update_quotes(notification["m"])
         elif channel == "account.portfolio":
-            await self.tlx.cancel_session()
+            await self.tlx.cancel_session() # Cancel all orders in this session
             self.quotes = {Direction.BUY: {}, Direction.SELL: {}}
             try:
                 self.position = next(
@@ -132,6 +132,10 @@ async def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler("log.txt", mode="a")
+        ]
     )
     run = True  # We set this to false when we want to stop
     while run:
@@ -156,4 +160,5 @@ async def main():
         await asyncio.gather(task, return_exceptions=True)
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
