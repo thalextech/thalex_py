@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import socket
+import sys
 import time
 from typing import Optional
 import websockets
@@ -131,6 +132,10 @@ async def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler("log.txt", mode="a")
+        ]
     )
     run = True  # We set this to false when we want to stop
     while run:
