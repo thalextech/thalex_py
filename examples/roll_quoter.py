@@ -39,16 +39,16 @@ FND_CAP = 0.00005  # Absolute cap for the fnd ma
 FND_RECALC_THRESHOLD = 0.0001
 # If index changes this many dollars, we recalculate quotes
 INDEX_RECALC_THRESHOLD = 2
-SPREAD_1DTE = 6  # price spread around fair value for rolls that expire within 1 day
-SPREAD_3DTE = 10  # price spread around fair value for rolls that expire within 3 days
+SPREAD_1DTE = 10  # price spread around fair value for rolls that expire within 1 day
+SPREAD_3DTE = 20  # price spread around fair value for rolls that expire within 3 days
 SPREAD_LONGTERM = (
-    16  # price spread around fair value for rolls that expire in more than 3 days
+    30  # price spread around fair value for rolls that expire in more than 3 days
 )
 # Store funding rate for reconnection and quick restart data persistence
 FND_CSV_PATH = "fnd.csv"
 # In seconds. If the data we restore is older than this, we start from scratch
 MAX_GAP = 10
-SIZE = 0.05
+SIZE = 0.1
 MAX_POSITION = 1.0  # Maximum absolute position of any instrument
 # To identify the orders and trades of this quoter. If you run multiple in parallel (eg for different expiries),
 # you should give them different labels.

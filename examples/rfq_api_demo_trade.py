@@ -8,7 +8,7 @@ import keys
 NETWORK = th.Network.TEST
 
 
-# This is a very basic example of how you can create and trade an rfq on thalex.
+# This is a very basic example, only to demonstrate how you can create and trade an rfq on thalex.
 async def create_and_buy_rfq(thalex: th.Thalex):
     await thalex.create_rfq(
         legs=[

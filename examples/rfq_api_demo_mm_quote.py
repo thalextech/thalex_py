@@ -15,6 +15,9 @@ CID_TRADE = 4
 CALL_ID_SET_COD = 5
 
 
+# This is just a simple example to demonstrate the usage of mm rfq api.
+
+
 def round_to_cent(value):
     return 0.01 * round(value * 100)
 
