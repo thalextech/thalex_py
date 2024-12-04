@@ -100,7 +100,7 @@ class PerpQuoter:
         elif channel.startswith("lwt"):
             await self.update_quotes(notification["m"])
         elif channel == "account.portfolio":
-            await self.tlx.cancel_session() # Cancel all orders in this session
+            await self.tlx.cancel_session()  # Cancel all orders in this session
             self.quotes = {Direction.BUY: {}, Direction.SELL: {}}
             try:
                 self.position = next(
@@ -134,8 +134,8 @@ async def main():
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler("log.txt", mode="a")
-        ]
+            logging.FileHandler("log.txt", mode="a"),
+        ],
     )
     run = True  # We set this to false when we want to stop
     while run:

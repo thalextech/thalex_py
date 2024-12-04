@@ -1,6 +1,6 @@
 [project]
 name = "thalex"
-version = "0.0.2"
+version = "1.0.0"
 authors = [
   {email="thalex_py@thalex.com"},
 ]
@@ -16,7 +16,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "websockets>=12.0",
+    "websockets>=14.1",
     "PyJWT>=2.8.0",
     "cryptography>=42.0.5",
 ]

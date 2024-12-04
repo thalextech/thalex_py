@@ -80,11 +80,13 @@ class OptionDeltaReplicator:
             if f.tell() == 0:
                 w.writerow(data.keys())
             for trade in trades:
-                data.update({
-                    "direction": trade.get("direction"),
-                    "amount": trade.get("amount"),
-                    "price": trade.get("price"),
-                })
+                data.update(
+                    {
+                        "direction": trade.get("direction"),
+                        "amount": trade.get("amount"),
+                        "price": trade.get("price"),
+                    }
+                )
                 w.writerow(data.values())
 
     def notification(self, channel, notification):
@@ -160,7 +162,9 @@ class OptionDeltaReplicator:
         # We need to know the deltas of the option we're tracking and our perpetual position.
         if self.delta_actual is not None and self.delta_target is not None:
             offset = round(self.delta_target - self.delta_actual, 3)
-            logging.info(f"Perp delta: {round(self.delta_actual, 3)} - Option delta: {round(self.delta_target, 3)} - Diff: {offset}")
+            logging.info(
+                f"Perp delta: {round(self.delta_actual, 3)} - Option delta: {round(self.delta_target, 3)} - Diff: {offset}"
+            )
             # Tracking delta exposure over time would be better, but this is simpler.
             if abs(offset) > HEDGING_BAND:
                 logging.info(

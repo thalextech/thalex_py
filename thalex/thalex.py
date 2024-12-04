@@ -7,6 +7,7 @@ import time
 from typing import Optional, List, Union
 
 import websockets
+from websockets.protocol import State as WsState
 
 
 def _make_auth_token(kid, private_key):
@@ -137,7 +138,7 @@ class Thalex:
         return await self.ws.recv()
 
     def connected(self):
-        return self.ws is not None and self.ws.open
+        return self.ws is not None and self.ws.state in [WsState.CONNECTING, WsState.OPEN]
 
     async def connect(self):
         self.ws = await websockets.connect(self.net.value, ping_interval=5)
