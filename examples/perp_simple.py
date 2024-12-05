@@ -107,7 +107,7 @@ class PerpQuoter:
                     p for p in notification if p["instrument_name"] == PERP
                 )["position"]
             except StopIteration:
-                self.position = 0
+                self.position = self.position or 0
 
     async def quote(self):
         await self.tlx.connect()
