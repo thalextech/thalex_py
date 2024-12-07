@@ -12,8 +12,7 @@ from thalex.thalex import Direction
 import keys  # Rename _keys.py to keys.py and add your keys. There are instructions how to create keys in that file.
 
 NETWORK = thalex.Network.TEST
-UNDERLYING = "BTCUSD"
-PERP = "BTC-PERPETUAL"
+INSTRUMENT = "BTC-PERPETUAL"
 TICK = 5  # USD
 SIZE_TICK = 0.01  # Contracts
 SPREAD = 15  # USD
@@ -34,7 +33,7 @@ def round_size(size):
     return SIZE_TICK * round(size / SIZE_TICK)
 
 
-class PerpQuoter:
+class Quoter:
     def __init__(self, tlx: thalex.Thalex):
         self.tlx = tlx
         self.mark: Optional[float] = None
@@ -66,7 +65,7 @@ class PerpQuoter:
                 amount=amount,
                 price=price,
                 direction=side,
-                instrument_name=PERP,
+                instrument_name=INSTRUMENT,
                 client_order_id=QUOTE_ID[side],
                 id=QUOTE_ID[side],
             )
@@ -104,7 +103,7 @@ class PerpQuoter:
             self.quotes = {Direction.BUY: {}, Direction.SELL: {}}
             try:
                 self.position = next(
-                    p for p in notification if p["instrument_name"] == PERP
+                    p for p in notification if p["instrument_name"] == INSTRUMENT
                 )["position"]
             except StopIteration:
                 self.position = self.position or 0
@@ -113,7 +112,7 @@ class PerpQuoter:
         await self.tlx.connect()
         await self.tlx.login(keys.key_ids[NETWORK], keys.private_keys[NETWORK])
         await self.tlx.set_cancel_on_disconnect(6)
-        await self.tlx.public_subscribe([f"lwt.{PERP}.1000ms"])
+        await self.tlx.public_subscribe([f"lwt.{INSTRUMENT}.1000ms"])
         await self.tlx.private_subscribe(["session.orders", "account.portfolio"])
         while True:
             msg = await self.tlx.receive()
@@ -140,7 +139,7 @@ async def main():
     run = True  # We set this to false when we want to stop
     while run:
         tlx = thalex.Thalex(network=NETWORK)
-        quoter = PerpQuoter(tlx)
+        quoter = Quoter(tlx)
         task = asyncio.create_task(quoter.quote())
         try:
             await task
