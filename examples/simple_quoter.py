@@ -12,6 +12,7 @@ from thalex.thalex import Direction
 import keys  # Rename _keys.py to keys.py and add your keys. There are instructions how to create keys in that file.
 
 NETWORK = thalex.Network.TEST
+ORDER_LABEL = "simple_quoter"
 INSTRUMENT = "BTC-PERPETUAL"
 PRICE_TICK = 1  # USD
 SIZE_TICK = 0.001  # Contracts
@@ -68,6 +69,7 @@ class Quoter:
                 instrument_name=INSTRUMENT,
                 client_order_id=QUOTE_ID[side],
                 id=QUOTE_ID[side],
+                label=ORDER_LABEL,
             )
             self.quotes[side] = {"status": "open", "price": price}
 
