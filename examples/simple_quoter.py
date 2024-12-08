@@ -107,6 +107,7 @@ class Quoter:
                 )["position"]
             except StopIteration:
                 self.position = self.position or 0
+            logging.info(f"Portfolio updated - {INSTRUMENT} position: {self.position}")
 
     async def quote(self):
         await self.tlx.connect()
