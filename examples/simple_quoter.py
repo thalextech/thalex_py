@@ -13,9 +13,9 @@ import keys  # Rename _keys.py to keys.py and add your keys. There are instructi
 
 NETWORK = thalex.Network.TEST
 INSTRUMENT = "BTC-PERPETUAL"
-TICK = 5  # USD
-SIZE_TICK = 0.01  # Contracts
-SPREAD = 15  # USD
+PRICE_TICK = 1  # USD
+SIZE_TICK = 0.001  # Contracts
+HALF_SPREAD = 1.5  # BPS
 AMEND_THRESHOLD = 5  # USD
 SIZE = 0.1  # Number of contracts to quote
 # If the size of our position is greater than this either side, we don't quote that side.
@@ -26,7 +26,7 @@ QUOTE_ID = {Direction.BUY: 1001, Direction.SELL: 1002}
 
 
 def round_to_tick(value):
-    return TICK * round(value / TICK)
+    return PRICE_TICK * round(value / PRICE_TICK)
 
 
 def round_size(size):
@@ -77,9 +77,9 @@ class Quoter:
         if self.position is None:
             return
 
-        bid_price = round_to_tick(new_mark - SPREAD)
+        bid_price = round_to_tick(new_mark - (HALF_SPREAD / 10_000 * new_mark))
         bid_size = round_size(max(min(SIZE, MAX_POSITION - self.position), 0))
-        ask_price = round_to_tick(new_mark + SPREAD)
+        ask_price = round_to_tick(new_mark + (HALF_SPREAD / 10_000 * new_mark))
         ask_size = round_size(max(min(SIZE, MAX_POSITION + self.position), 0))
 
         if up:
