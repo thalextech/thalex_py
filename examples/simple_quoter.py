@@ -13,9 +13,9 @@ import keys  # Rename _keys.py to keys.py and add your keys. There are instructi
 
 NETWORK = thalex.Network.TEST
 ORDER_LABEL = "simple_quoter"
-INSTRUMENT = "BTC-PERPETUAL"
-PRICE_TICK = 1  # USD
-SIZE_TICK = 0.001  # Contracts
+INSTRUMENT = "BTC-PERPETUAL"  # When changing INSTRUMENT, make sure to update PRICE_TICK and SIZE_TICK based on Thalex Contract Specifications
+PRICE_TICK = 1  # Price Tick Size as defined in Thalex Contract Specifications - https://www.thalex.com/trading-information/contract-specifications/perpetuals
+SIZE_TICK = 0.001  # Volume Tick Size as defined in Thalex Contract Specifications - https://www.thalex.com/trading-information/contract-specifications/perpetuals
 HALF_SPREAD = 1.5  # BPS
 AMEND_THRESHOLD = 5  # USD
 SIZE = 0.1  # Number of contracts to quote
@@ -99,7 +99,7 @@ class Quoter:
             for order in notification:
                 self.quotes[Direction(order["direction"])] = order
         elif channel.startswith("lwt"):
-            await self.update_quotes(notification["m"])
+            await self.update_quotes(new_mark=notification["m"])
         elif channel == "account.portfolio":
             await self.tlx.cancel_session()  # Cancel all orders in this session
             self.quotes = {Direction.BUY: {}, Direction.SELL: {}}
@@ -114,7 +114,7 @@ class Quoter:
     async def quote(self):
         await self.tlx.connect()
         await self.tlx.login(keys.key_ids[NETWORK], keys.private_keys[NETWORK])
-        await self.tlx.set_cancel_on_disconnect(6)
+        await self.tlx.set_cancel_on_disconnect(timeout_secs=6)
         await self.tlx.public_subscribe([f"lwt.{INSTRUMENT}.1000ms"])
         await self.tlx.private_subscribe(["session.orders", "account.portfolio"])
         while True:
