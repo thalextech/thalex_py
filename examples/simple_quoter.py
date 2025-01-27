@@ -85,11 +85,11 @@ class Quoter:
         ask_size = round_size(max(min(SIZE, MAX_POSITION + self.position), 0))
 
         if up:
-            # Insert Sell before Buy to avoid self-trades if new ask price is lower than existing bid
+            # Insert Sell before Buy to avoid self-trades if existing ask price is lower than new bid
             await self.adjust_order(Direction.SELL, price=ask_price, amount=ask_size)
             await self.adjust_order(Direction.BUY, price=bid_price, amount=bid_size)
         else:
-            # Insert Buy before Sell to avoid self-trades if new bid price is higher than existing ask
+            # Insert Buy before Sell to avoid self-trades if existing bid price is higher than new ask
             await self.adjust_order(Direction.BUY, price=bid_price, amount=bid_size)
             await self.adjust_order(Direction.SELL, price=ask_price, amount=ask_size)
 
