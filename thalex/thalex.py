@@ -130,9 +130,10 @@ class Position:
 
 
 class Thalex:
-    def __init__(self, network: Network):
+    def __init__(self, network: Network, user_agent: str = "ThalexPythonBot/1.0"):
         self.net: Network = network
         self.ws: websockets.client = None
+        self.user_agent = user_agent
 
     async def receive(self):
         return await self.ws.recv()
@@ -141,7 +142,10 @@ class Thalex:
         return self.ws is not None and self.ws.state in [WsState.CONNECTING, WsState.OPEN]
 
     async def connect(self):
-        self.ws = await websockets.connect(self.net.value, ping_interval=5)
+        headers = {"User-Agent": self.user_agent}
+        self.ws = await websockets.connect(self.net.value,
+                                           ping_interval=5,
+                                           additional_headers=headers)
 
     async def disconnect(self):
         await self.ws.close()
