@@ -198,6 +198,9 @@ async def main():
             # An exponential backoff would be nicer.
             logging.exception(f"Lost connection. Reconnecting...")
             time.sleep(0.1)
+        except KeyboardInterrupt:
+            logging.info("Exiting script...")
+            run = False
         except asyncio.CancelledError:
             # This means we are stopping the program from the outside (eg Ctrl+C on OSX/Linux)
             logging.info("Signal received. Stopping...")

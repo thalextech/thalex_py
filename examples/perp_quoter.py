@@ -361,6 +361,9 @@ async def main():
             time.sleep(0.1)
         except asyncio.CancelledError:
             run = False
+        except KeyboardInterrupt:
+            logging.info("Exiting script...")
+            run = False
         except:
             logging.exception("There was an unexpected error:")
         if thalex.connected():

@@ -152,6 +152,9 @@ async def main():
         except asyncio.CancelledError:
             logging.info("Quoting cancelled")
             run = False
+        except KeyboardInterrupt:
+            logging.info("Exiting script...")
+            run = False
         except:
             logging.exception("There was an unexpected error:")
             run = False
