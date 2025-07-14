@@ -1317,12 +1317,12 @@ class Thalex:
         request = {
             "method": "public/mark_price_historical_data",
             "params": {
-                "id": id,
                 "instrument_name": instrument_name,
                 "from": ts_from,
                 "to": ts_to,
                 "resolution": resolution,
             },
+            "id": id,
         }
         request = json.dumps(request)
         logging.debug(f"Sending {request=}")
@@ -1349,12 +1349,12 @@ class Thalex:
         request = {
             "method": "public/index_price_historical_data",
             "params": {
-                "id": id,
                 "index_name": index_name,
                 "from": ts_from,
                 "to": ts_to,
                 "resolution": resolution,
             },
+            "id": id,
         }
         request = json.dumps(request)
         logging.debug(f"Sending {request=}")
