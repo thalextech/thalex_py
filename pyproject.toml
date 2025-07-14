@@ -20,7 +20,7 @@ dependencies = [
     "PyJWT>=2.8.0",
     "cryptography>=42.0.5",
 ]
-
+license = {file = "LICENSE"}
 
 [project.urls]
 Homepage = "https://github.com/thalextech/thalex_py"
@@ -31,8 +31,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build]
 include = [
-    "thalex/**/*"
+    "thalex/**/*",
+    "README.md"
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["thalex"]
 
 [tool.black]
 line-length = 90
