@@ -1,6 +1,6 @@
 [project]
 name = "thalex"
-version = "1.0.1"
+version = "1.1.0"
 authors = [
   {email="thalex_py@thalex.com"},
 ]
