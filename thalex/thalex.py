@@ -923,7 +923,7 @@ class Thalex:
         await self._send(
             "private/required_margin_for_order",
             id,
-            instrument_name=instrument_name,
+            legs=legs,
             amount=amount,
             price=price,
         )
