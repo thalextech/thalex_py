@@ -798,7 +798,7 @@ class Thalex:
         :bookmark:  Set to bookmark from previous call to get next page.
         """
         await self._send(
-            "private/trade_history",
+            "private/daily_mark_history",
             id,
             limit=limit,
             time_low=time_low,
