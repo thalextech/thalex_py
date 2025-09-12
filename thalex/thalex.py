@@ -106,7 +106,7 @@ class Quote:
 class Asset:
     def __init__(
         self,
-        asset_name: float,
+        asset_name: str,
         amount: float,
     ):
         self.asset_name = asset_name
@@ -119,7 +119,7 @@ class Asset:
 class Position:
     def __init__(
         self,
-        instrument_name: float,
+        instrument_name: str,
         amount: float,
     ):
         self.instrument_name = instrument_name
