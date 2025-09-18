@@ -1,9 +1,11 @@
 keys.py
 fnd.csv
+log.txt
 trades.log
 trades_options.log
 trades_rolls.log
 *.orig
+.nix-venv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
