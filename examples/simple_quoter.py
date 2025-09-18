@@ -6,6 +6,7 @@ import sys
 import time
 from typing import Optional
 import websockets
+from dataclasses import dataclass
 
 import thalex
 from thalex.thalex import Direction
@@ -25,6 +26,10 @@ SIZE = 0.1  # Number of contracts to quote
 MAX_POSITION = 0.3
 QUOTE_ID = {Direction.BUY: 1001, Direction.SELL: 1002}
 
+REFRESH_PORTFOLIO_EVERY_N = 100  # Refresh portfolio every N notifications to determine if to take profit or stop loss
+TAKE_PROFIT_BPS = 10 # Take profit at 10 bps
+STOP_LOSS_BPS = 20 # Stop loss at 20 bps
+
 
 def round_to_tick(value):
     return PRICE_TICK * round(value / PRICE_TICK)
@@ -33,16 +38,37 @@ def round_to_tick(value):
 def round_size(size):
     return SIZE_TICK * round(size / SIZE_TICK)
 
+@dataclass
+class Position:
+    """Simple class to represent a position"""
+    instrument_name: str
+    position: float
+    entry_value: float
+    perpetual_funding_entry_value: float
+    index: float
+    iv: Optional[float]
+    mark_price: float
+    start_price: float
+    average_price: float
+    unrealised_pnl: float
+    unrealised_perpetual_funding: float
+    realised_pnl: float
+    realised_position_pnl: float
+    realised_perpetual_funding: float
+    session_fees: float
+
+
+
 
 class Quoter:
     def __init__(self, tlx: thalex.Thalex):
-        self.tlx = tlx
+        self.tlx: thalex.Thalex = tlx
         self.mark: Optional[float] = None
         self.quotes: dict[thalex.Direction, Optional[dict]] = {
             Direction.BUY: {},
             Direction.SELL: {},
         }
-        self.position: Optional[float] = None
+        self.position: Optional[Position] = None
 
     async def adjust_order(self, side, price, amount):
         confirmed = self.quotes[side]
@@ -80,9 +106,9 @@ class Quoter:
             return
 
         bid_price = round_to_tick(new_mark - (HALF_SPREAD / 10_000 * new_mark))
-        bid_size = round_size(max(min(SIZE, MAX_POSITION - self.position), 0))
+        bid_size = round_size(max(min(SIZE, MAX_POSITION - self.position.position), 0))
         ask_price = round_to_tick(new_mark + (HALF_SPREAD / 10_000 * new_mark))
-        ask_size = round_size(max(min(SIZE, MAX_POSITION + self.position), 0))
+        ask_size = round_size(max(min(SIZE, MAX_POSITION + self.position.position), 0))
 
         if up:
             # Insert Sell before Buy to avoid self-trades if existing ask price is lower than new bid
@@ -92,6 +118,66 @@ class Quoter:
             # Insert Buy before Sell to avoid self-trades if existing bid price is higher than new ask
             await self.adjust_order(Direction.BUY, price=bid_price, amount=bid_size)
             await self.adjust_order(Direction.SELL, price=ask_price, amount=ask_size)
+        await self.manage_position(new_mark)
+
+        
+    async def manage_position(self, new_mark: float):
+        if abs(self.position.position):
+            # take profit and stop loss
+            if self.position.position > 0:
+                # long position - take profit at higher price, stop loss at lower price
+                tp_price = round_to_tick(self.position.average_price * (1 + TAKE_PROFIT_BPS / 10_000))
+                sl_price = round_to_tick(self.position.average_price * (1 - STOP_LOSS_BPS / 10_000))
+                if tp_price > new_mark:
+                    logging.info(f"Taking profit on long position at {tp_price}")
+                    await self.tlx.insert(
+                        amount=abs(self.position.position),
+                        price=tp_price,
+                        direction=Direction.SELL,
+                        instrument_name=INSTRUMENT,
+                        client_order_id=9999,
+                        id=9999,
+                        label="take_profit",
+                    )
+                if sl_price < new_mark:
+                    logging.info(f"Stopping loss on long position at {sl_price}")
+                    await self.tlx.insert(
+                        amount=abs(self.position.position),
+                        price=sl_price,
+                        direction=Direction.SELL,
+                        instrument_name=INSTRUMENT,
+                        client_order_id=9998,
+                        id=9998,
+                        label="stop_loss",
+                    )
+            else:
+                # short position - take profit at lower price, stop loss at higher price
+                tp_price = round_to_tick(self.position.average_price * (1 - TAKE_PROFIT_BPS / 10_000))
+                sl_price = round_to_tick(self.position.average_price * (1 + STOP_LOSS_BPS / 10_000))
+                if tp_price < new_mark:
+                    logging.info(f"Taking profit on short position at {tp_price}")
+                    await self.tlx.insert(
+                        amount=abs(self.position.position),
+                        price=tp_price,
+                        direction=Direction.BUY,
+                        instrument_name=INSTRUMENT,
+                        client_order_id=9997,
+                        id=9997,
+                        label="take_profit",
+                    )
+                if sl_price > new_mark:
+                    logging.info(f"Stopping loss on short position at {sl_price}")
+                    await self.tlx.insert(
+                        amount=abs(self.position.position),
+                        price=sl_price,
+                        direction=Direction.BUY,
+                        instrument_name=INSTRUMENT,
+                        client_order_id=9996,
+                        id=9996,
+                        label="stop_loss",
+                    )
+
+
 
     async def handle_notification(self, channel: str, notification):
         logging.debug(f"notification in channel {channel} {notification}")
@@ -104,12 +190,16 @@ class Quoter:
             await self.tlx.cancel_session()  # Cancel all orders in this session
             self.quotes = {Direction.BUY: {}, Direction.SELL: {}}
             try:
-                self.position = next(
+                position = next(
                     p for p in notification if p["instrument_name"] == INSTRUMENT
-                )["position"]
+                )
+                self.position = Position(**position)
+
             except StopIteration:
-                self.position = self.position or 0
-            logging.info(f"Portfolio updated - {INSTRUMENT} position: {self.position}")
+                self.position = self.position or None
+            logging.info(f"Portfolio updated - {INSTRUMENT} position: {self.position.position}")
+        else:
+            logging.warning(f"Unhandled notification in channel {channel} {notification}")
 
     async def quote(self):
         await self.tlx.connect()
@@ -117,7 +207,12 @@ class Quoter:
         await self.tlx.set_cancel_on_disconnect(timeout_secs=6)
         await self.tlx.public_subscribe([f"lwt.{INSTRUMENT}.1000ms"])
         await self.tlx.private_subscribe(["session.orders", "account.portfolio"])
+        iterations = 0
         while True:
+            if iterations % REFRESH_PORTFOLIO_EVERY_N == 0:
+                logging.info("Refreshing portfolio")
+                await self.tlx.account_breakdown()
+            iterations += 1
             msg = await self.tlx.receive()
             msg = json.loads(msg)
             if "channel_name" in msg:
