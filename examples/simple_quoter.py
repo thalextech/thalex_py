@@ -17,14 +17,25 @@ ORDER_LABEL = "simple_quoter"
 INSTRUMENT = "BTC-PERPETUAL"  # When changing INSTRUMENT, make sure to update PRICE_TICK and SIZE_TICK based on Thalex Contract Specifications
 PRICE_TICK = 1  # Price Tick Size as defined in Thalex Contract Specifications - https://www.thalex.com/trading-information/contract-specifications/perpetuals
 SIZE_TICK = 0.001  # Volume Tick Size as defined in Thalex Contract Specifications - https://www.thalex.com/trading-information/contract-specifications/perpetuals
-HALF_SPREAD = 1.5  # BPS
+HALF_SPREAD = 0.75  # BPS
 AMEND_THRESHOLD = 5  # USD
 SIZE = 0.1  # Number of contracts to quote
 # If the size of our position is greater than this either side, we don't quote that side.
 # Because we don't actively cancel orders already inserted and due to race conditions in
 # notification channels, in some cases we might overshoot.
 MAX_POSITION = 0.3
-QUOTE_ID = {Direction.BUY: 1001, Direction.SELL: 1002}
+
+from enum import Enum
+class OrderType(Enum):
+    STOP = "stop"
+    TAKE_PROFIT = "take_profit"
+
+QUOTE_ID = {
+    Direction.BUY: 1001, 
+    Direction.SELL: 1002,
+    OrderType.STOP: 2001,
+    OrderType.TAKE_PROFIT: 2002
+}
 
 REFRESH_PORTFOLIO_EVERY_N = 100  # Refresh portfolio every N notifications to determine if to take profit or stop loss
 TAKE_PROFIT_BPS = 10 # Take profit at 10 bps
@@ -69,6 +80,8 @@ class Quoter:
             Direction.SELL: {},
         }
         self.position: Optional[Position] = None
+        self.tp_order_id: Optional[int] = None
+        self.sl_order_id: Optional[int] = None
 
     async def adjust_order(self, side, price, amount):
         confirmed = self.quotes[side]
@@ -96,8 +109,76 @@ class Quoter:
                 client_order_id=QUOTE_ID[side],
                 id=QUOTE_ID[side],
                 label=ORDER_LABEL,
+                post_only=True
             )
             self.quotes[side] = {"status": "open", "price": price}
+
+    async def update_tp_and_sl(self, ):
+        """Place a take profit and stop loss order based on current position"""
+        if self.position is None or self.position.position == 0:
+            # No position, nothing to do
+            for order_id in [self.tp_order_id, self.sl_order_id]:
+                if order_id is not None:
+                    logging.info(f"Cancelling order {order_id} as we have no position")
+                    await self.tlx.cancel(order_id=order_id)
+            self.tp_order_id = None
+            self.sl_order_id = None
+            return
+        entry_price = self.position.average_price
+        if self.position.position > 0:
+            # Long position - place take profit above and stop loss below
+            tp_price = round_to_tick(entry_price * (1 + TAKE_PROFIT_BPS / 10_000))
+            sl_price = round_to_tick(entry_price * (1 - STOP_LOSS_BPS / 10_000))
+            sl_side, tp_side = Direction.SELL, Direction.SELL
+        else:
+            # Short position - place take profit below and stop loss above
+            tp_price = round_to_tick(entry_price * (1 - TAKE_PROFIT_BPS / 10_000))
+            sl_price = round_to_tick(entry_price * (1 + STOP_LOSS_BPS / 10_000))
+            sl_side, tp_side = Direction.BUY, Direction.BUY
+        tp_size, sl_size = [abs(self.position.position)] * 2
+
+        if self.tp_order_id is not None:
+            logging.info(f"Amending TP order {self.tp_order_id} to {tp_size} @ {tp_price}")
+            await self.tlx.amend(
+                amount=tp_size,
+                price=tp_price,
+                id=self.tp_order_id,
+            )
+        else:
+            logging.info(f"Inserting TP order {tp_size} @ {tp_price}")
+            await self.tlx.create_conditional_order(
+                direction=tp_side,
+                instrument_name=INSTRUMENT,
+                amount=tp_size,
+                stop_price=tp_price,
+                label=f"{ORDER_LABEL}_TP",
+                reduce_only=True,
+                id=QUOTE_ID[OrderType.TAKE_PROFIT]
+            )
+            self.tp_order_id = QUOTE_ID[OrderType.TAKE_PROFIT]
+            logging.info(f"TP order created with id {self.tp_order_id}")
+        
+        if self.sl_order_id is not None:
+            logging.info(f"Amending SL order {self.sl_order_id} to {sl_size} @ {sl_price}")
+            await self.tlx.amend(
+                amount=sl_size,
+                price=sl_price,
+                id=self.sl_order_id,
+            )
+        else:
+            logging.info(f"Inserting SL order {sl_size} @ {sl_price}")
+            await self.tlx.create_conditional_order(
+                direction=sl_side,
+                instrument_name=INSTRUMENT,
+                amount=sl_size,
+                stop_price=sl_price,
+                label=f"{ORDER_LABEL}_SL",
+                reduce_only=True,
+                id=QUOTE_ID[OrderType.STOP]
+            )
+            self.sl_order_id = QUOTE_ID[OrderType.STOP]
+            logging.info(f"SL order created with id {self.sl_order_id}")
+        
 
     async def update_quotes(self, new_mark):
         up = self.mark is None or new_mark > self.mark
@@ -118,66 +199,6 @@ class Quoter:
             # Insert Buy before Sell to avoid self-trades if existing bid price is higher than new ask
             await self.adjust_order(Direction.BUY, price=bid_price, amount=bid_size)
             await self.adjust_order(Direction.SELL, price=ask_price, amount=ask_size)
-        await self.manage_position(new_mark)
-
-        
-    async def manage_position(self, new_mark: float):
-        if abs(self.position.position):
-            # take profit and stop loss
-            if self.position.position > 0:
-                # long position - take profit at higher price, stop loss at lower price
-                tp_price = round_to_tick(self.position.average_price * (1 + TAKE_PROFIT_BPS / 10_000))
-                sl_price = round_to_tick(self.position.average_price * (1 - STOP_LOSS_BPS / 10_000))
-                if tp_price > new_mark:
-                    logging.info(f"Taking profit on long position at {tp_price}")
-                    await self.tlx.insert(
-                        amount=abs(self.position.position),
-                        price=tp_price,
-                        direction=Direction.SELL,
-                        instrument_name=INSTRUMENT,
-                        client_order_id=9999,
-                        id=9999,
-                        label="take_profit",
-                    )
-                if sl_price < new_mark:
-                    logging.info(f"Stopping loss on long position at {sl_price}")
-                    await self.tlx.insert(
-                        amount=abs(self.position.position),
-                        price=sl_price,
-                        direction=Direction.SELL,
-                        instrument_name=INSTRUMENT,
-                        client_order_id=9998,
-                        id=9998,
-                        label="stop_loss",
-                    )
-            else:
-                # short position - take profit at lower price, stop loss at higher price
-                tp_price = round_to_tick(self.position.average_price * (1 - TAKE_PROFIT_BPS / 10_000))
-                sl_price = round_to_tick(self.position.average_price * (1 + STOP_LOSS_BPS / 10_000))
-                if tp_price < new_mark:
-                    logging.info(f"Taking profit on short position at {tp_price}")
-                    await self.tlx.insert(
-                        amount=abs(self.position.position),
-                        price=tp_price,
-                        direction=Direction.BUY,
-                        instrument_name=INSTRUMENT,
-                        client_order_id=9997,
-                        id=9997,
-                        label="take_profit",
-                    )
-                if sl_price > new_mark:
-                    logging.info(f"Stopping loss on short position at {sl_price}")
-                    await self.tlx.insert(
-                        amount=abs(self.position.position),
-                        price=sl_price,
-                        direction=Direction.BUY,
-                        instrument_name=INSTRUMENT,
-                        client_order_id=9996,
-                        id=9996,
-                        label="stop_loss",
-                    )
-
-
 
     async def handle_notification(self, channel: str, notification):
         logging.debug(f"notification in channel {channel} {notification}")
@@ -194,6 +215,7 @@ class Quoter:
                     p for p in notification if p["instrument_name"] == INSTRUMENT
                 )
                 self.position = Position(**position)
+                await self.update_tp_and_sl()
 
             except StopIteration:
                 self.position = self.position or None
