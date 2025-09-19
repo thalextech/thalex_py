@@ -1,11 +1,10 @@
 import enum
 import json
 import logging
+import time
+from typing import List, Optional, Union
 
 import jwt
-import time
-from typing import Optional, List, Union
-
 import websockets
 from websockets.protocol import State as WsState
 
@@ -94,9 +93,7 @@ class SideQuote:
 
 
 class Quote:
-    def __init__(
-        self, instrument_name: str, bid: Optional[SideQuote], ask: Optional[SideQuote]
-    ):
+    def __init__(self, instrument_name: str, bid: Optional[SideQuote], ask: Optional[SideQuote]):
         self.i = instrument_name
         self.b = bid
         self.a = ask
@@ -162,13 +159,14 @@ class Thalex:
         return await self.ws.recv()
 
     def connected(self):
-        return self.ws is not None and self.ws.state in [WsState.CONNECTING, WsState.OPEN]
+        return self.ws is not None and self.ws.state in [
+            WsState.CONNECTING,
+            WsState.OPEN,
+        ]
 
     async def connect(self):
         headers = {"User-Agent": self.user_agent}
-        self.ws = await websockets.connect(
-            self.net.value, ping_interval=5, additional_headers=headers
-        )
+        self.ws = await websockets.connect(self.net.value, ping_interval=5, additional_headers=headers)
 
     async def disconnect(self):
         await self.ws.close()
@@ -576,9 +574,7 @@ class Thalex:
             respective instrument. At least one leg must be long.
         :label:  User label for this RFQ, which will be reflected in eventual trades.
         """
-        await self._send(
-            "private/create_rfq", id, legs=[leg.dumps() for leg in legs], label=label
-        )
+        await self._send("private/create_rfq", id, legs=[leg.dumps() for leg in legs], label=label)
 
     async def cancel_rfq(
         self,

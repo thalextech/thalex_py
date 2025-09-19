@@ -1,18 +1,18 @@
 import asyncio
 import csv
+import enum
 import json
 import logging
 import os
 import socket
 import time
 from datetime import datetime, timezone
-from typing import Union, Dict, Optional, List
-import enum
+from typing import Dict, List, Optional, Union
+
 import websockets
 
-import thalex as th
 import keys  # Rename _keys.py to keys.py and add your keys. There are instructions how to create keys in that file.
-
+import thalex as th
 
 # The main idea behind this example is to demonstrate how thalex_py can be used to quote rolls on Thalex.
 # It's not financial advice, however you can use it to test the library and write your own strategy.
@@ -28,9 +28,7 @@ UNDERLYING = "BTCUSD"  # We'll only quote rolls of this underlying eg BTCUSD or 
 MAX_DTE = 2  # Maximum days to expiry to quote. Mqp rewards are within 35 days.
 # How often to receive tickers. Choices are 100ms, 200ms, 500ms, 1000ms, 5000ms, 60000ms or raw
 SUBSCRIBE_INTERVAL = "1000ms"
-FND_MA_1DTE_WINDOW = (
-    5  # Length of moving window to average funding rate in seconds for same day expiries
-)
+FND_MA_1DTE_WINDOW = 5  # Length of moving window to average funding rate in seconds for same day expiries
 FND_MA_3DTE_WINDOW = 60  # Length of moving window to average funding rate in seconds for expiries within 3 days
 FND_LONGTERM = -0.0001  # Hard coded funding rate for far away expiries
 AMEND_THRESHOLD = 3  # In ticks. We don't amend smaller than this, to avoid throttling.
@@ -41,9 +39,7 @@ FND_RECALC_THRESHOLD = 0.0001
 INDEX_RECALC_THRESHOLD = 2
 SPREAD_1DTE = 10  # price spread around fair value for rolls that expire within 1 day
 SPREAD_3DTE = 20  # price spread around fair value for rolls that expire within 3 days
-SPREAD_LONGTERM = (
-    30  # price spread around fair value for rolls that expire in more than 3 days
-)
+SPREAD_LONGTERM = 30  # price spread around fair value for rolls that expire in more than 3 days
 # Store funding rate for reconnection and quick restart data persistence
 FND_CSV_PATH = "fnd.csv"
 # In seconds. If the data we restore is older than this, we start from scratch
@@ -403,16 +399,12 @@ class RollQuoter:
                 price = quote[idx]
                 sent = roll.prices_sent[idx]
                 if price is None:
-                    if sent is not None or (
-                        roll.orders[idx] is not None and roll.orders[idx].is_open()
-                    ):
+                    if sent is not None or (roll.orders[idx] is not None and roll.orders[idx].is_open()):
                         # We have an open order that we want to cancel.
                         # If the order is open because the previous cancel was not yet processed, we might be trying to
                         # delete it twice, but that should be rare and even then it's better to be safe than sorry.
                         client_order_id = roll.orders[idx].id
-                        logging.debug(
-                            f"Cancel {client_order_id} {side.value} {roll.instrument}"
-                        )
+                        logging.debug(f"Cancel {client_order_id} {side.value} {roll.instrument}")
                         await self.thalex.cancel(
                             client_order_id=client_order_id,
                             id=client_order_id,
@@ -424,9 +416,7 @@ class RollQuoter:
                     client_order_id = self.client_order_id
                     self.client_order_id = self.client_order_id + 1
                     roll.orders[idx] = Order(client_order_id, price, side)
-                    logging.debug(
-                        f"Insert {client_order_id} {roll.instrument.name} {side.value} {price}"
-                    )
+                    logging.debug(f"Insert {client_order_id} {roll.instrument.name} {side.value} {price}")
                     await self.thalex.insert(
                         direction=side,
                         instrument_name=roll.instrument.name,
@@ -442,9 +432,7 @@ class RollQuoter:
                     # We only amend if the difference is large enough, to avoid throttling.
                     roll.prices_sent[idx] = price
                     client_order_id = roll.orders[idx].id
-                    logging.debug(
-                        f"Amend {client_order_id} {roll.instrument.name} {side.value} {sent} -> {price}"
-                    )
+                    logging.debug(f"Amend {client_order_id} {roll.instrument.name} {side.value} {sent} -> {price}")
                     await self.thalex.amend(
                         amount=SIZE,
                         price=price,
@@ -471,23 +459,18 @@ class RollQuoter:
                             # or filled before our cancel request was processed.
                             # We don't need to do anything.
                             logging.info(
-                                f"Order({oid}) already filled/cancelled: {order.side.value} "
-                                f"{idata.instrument.name}"
+                                f"Order({oid}) already filled/cancelled: {order.side.value} {idata.instrument.name}"
                             )
                         else:
                             # We failed to pull an order for some other reason. That's bad.
                             # Best we can do is try again immediately
-                            logging.error(
-                                f"Failed to cancel {order} for {idata.instrument}: {error}"
-                            )
+                            logging.error(f"Failed to cancel {order} for {idata.instrument}: {error}")
                             await self.thalex.cancel(client_order_id=oid, id=oid)
                     elif not order.is_open():
                         # We don't have an open order. We'll leave it at that for now and insert one later.
                         idata.prices_sent[side] = None
                         if error["code"] == ERROR_CODE_THROTTLE:
-                            logging.info(
-                                f"Insert {order} @{sent} {idata.instrument.name} throttled"
-                            )
+                            logging.info(f"Insert {order} @{sent} {idata.instrument.name} throttled")
                         else:
                             # If it's not just throttling, let's show some elaborate logs
                             # to be able to analyze what was wrong with the order.
@@ -500,18 +483,13 @@ class RollQuoter:
                         if error["code"] == ERROR_CODE_THROTTLE:
                             # If you see this a lot, you should decrease RECALC_THRESHOLD, MAX_DTE or
                             # increase AMEND_THRESHOLD in order to amend less frequently
-                            logging.info(
-                                f"Amend {order} for {idata.instrument} -> {sent} throttled"
-                            )
+                            logging.info(f"Amend {order} for {idata.instrument} -> {sent} throttled")
                         else:
                             logging.warning(
                                 f"Failed to amend order({oid}) {order.side.value} {idata.instrument.name} "
                                 f"{order.price} -> {sent}: {error}\n"
                             )
-                        if (
-                            abs(order.price - sent)
-                            >= 2 * AMEND_THRESHOLD * idata.instrument.tick_size
-                        ):
+                        if abs(order.price - sent) >= 2 * AMEND_THRESHOLD * idata.instrument.tick_size:
                             # The order is open at the wrong price, and we're getting throttled,
                             # so we won't try to amand again, but cancel it for now and reinsert it later.
                             idata.prices_sent[side] = None
@@ -592,9 +570,7 @@ class RollQuoter:
         # Filter the rolls without a perp leg out
         to_pop = []
         for roll in self.rolls.values():
-            if self.perp.instrument.name not in [
-                leg.iname for leg in roll.instrument.legs
-            ]:
+            if self.perp.instrument.name not in [leg.iname for leg in roll.instrument.legs]:
                 to_pop.append(roll.instrument.name)
         for tp in to_pop:
             self.rolls.pop(tp)
@@ -613,9 +589,7 @@ class RollQuoter:
             id=CALL_ID_LOGIN,
         )
         await self.thalex.set_cancel_on_disconnect(6, id=CALL_ID_SET_COD)
-        await self.thalex.public_subscribe(
-            ["instruments", f"price_index.{UNDERLYING}"], id=CALL_ID_SUBSCRIBE
-        )
+        await self.thalex.public_subscribe(["instruments", f"price_index.{UNDERLYING}"], id=CALL_ID_SUBSCRIBE)
         await self.thalex.private_subscribe(
             ["session.orders", "account.trade_history", "account.portfolio"],
             id=CALL_ID_SUBSCRIBE,
@@ -730,7 +704,7 @@ async def main():
                     r = await thalex.receive()
                     r = json.loads(r)
                     if r.get("id", -1) == CALL_ID_CANCEL_SESSION:
-                        logging.info(f"Cancelled session orders")
+                        logging.info("Cancelled session orders")
                         break
                 await thalex.disconnect()
 

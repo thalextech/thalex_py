@@ -5,11 +5,12 @@ import socket
 import sys
 import time
 from typing import Optional
+
 import websockets
 
+import keys  # Rename _keys.py to keys.py and add your keys. There are instructions how to create keys in that file.
 import thalex
 from thalex.thalex import Direction
-import keys  # Rename _keys.py to keys.py and add your keys. There are instructions how to create keys in that file.
 
 NETWORK = thalex.Network.TEST
 ORDER_LABEL = "simple_quoter"
@@ -104,9 +105,7 @@ class Quoter:
             await self.tlx.cancel_session()  # Cancel all orders in this session
             self.quotes = {Direction.BUY: {}, Direction.SELL: {}}
             try:
-                self.position = next(
-                    p for p in notification if p["instrument_name"] == INSTRUMENT
-                )["position"]
+                self.position = next(p for p in notification if p["instrument_name"] == INSTRUMENT)["position"]
             except StopIteration:
                 self.position = self.position or 0
             logging.info(f"Portfolio updated - {INSTRUMENT} position: {self.position}")
@@ -152,7 +151,7 @@ async def main():
         except asyncio.CancelledError:
             logging.info("Quoting cancelled")
             run = False
-        except:
+        except:  # noqa: E722
             logging.exception("There was an unexpected error:")
             run = False
         if tlx.connected():

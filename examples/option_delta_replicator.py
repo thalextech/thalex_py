@@ -1,11 +1,11 @@
 import asyncio
 import csv
+import datetime
 import json
 import logging
 import socket
 import time
 from typing import Optional
-import datetime
 
 import websockets
 
@@ -108,10 +108,7 @@ class OptionDeltaReplicator:
             fills = result["fills"]
             direction = result["direction"]
             side_sign = 1 if direction == "buy" else -1
-            trades = [
-                {"direction": direction, "price": f["price"], "amount": f["amount"]}
-                for f in fills
-            ]
+            trades = [{"direction": direction, "price": f["price"], "amount": f["amount"]} for f in fills]
             logging.info(f"Traded {trades}")
             for fill in fills:
                 self.delta_actual += side_sign * fill["amount"]
@@ -119,11 +116,7 @@ class OptionDeltaReplicator:
         elif msg_id == CID_PORTFOLIO:
             # We make one portfolio call on startup, to find out our initial perpetual position.
             try:
-                self.delta_actual = next(
-                    pos["position"]
-                    for pos in result
-                    if pos["instrument_name"] == PERPETUAL
-                )
+                self.delta_actual = next(pos["position"] for pos in result if pos["instrument_name"] == PERPETUAL)
             except StopIteration:
                 self.delta_actual = 0
 
@@ -196,7 +189,7 @@ async def main():
             # It can (and does) happen that we lose connection for whatever reason. If it happens We wait a little,
             # so that if the connection loss is persistent, we don't just keep trying in a hot loop, then reconnect.
             # An exponential backoff would be nicer.
-            logging.exception(f"Lost connection. Reconnecting...")
+            logging.exception("Lost connection. Reconnecting...")
             time.sleep(0.1)
         except asyncio.CancelledError:
             # This means we are stopping the program from the outside (eg Ctrl+C on OSX/Linux)

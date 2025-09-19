@@ -1,1 +1,1 @@
-from thalex.thalex import *
+from .thalex import *  # noqa

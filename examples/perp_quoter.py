@@ -1,14 +1,15 @@
 import asyncio
+import enum
 import json
 import logging
 import socket
 import time
-from typing import Union, Dict, Optional, List
-import enum
+from typing import Dict, List, Optional, Union
+
 import websockets
 
-import thalex as th
 import keys  # Rename _keys.py to keys.py and add your keys. There are instructions how to create keys in that file.
+import thalex as th
 
 # The main idea behind this example is to demonstrate how thalex_py can be used to quote the perpetual on Thalex.
 # It's not financial advice, however you can use it to test the library and write your own strategy.
@@ -144,18 +145,14 @@ class PerpQuoter:
         # We could also use eg the funding rate (it's in the ticker) and the portfolio here.
         bids = [
             th.SideQuote(
-                price=self.round_to_tick(
-                    self.index - (SPREAD + BID_STEP * lvl) * self.tick
-                ),
+                price=self.round_to_tick(self.index - (SPREAD + BID_STEP * lvl) * self.tick),
                 amount=amt,
             )
             for lvl, amt in enumerate(BID_SIZES)
         ]
         asks = [
             th.SideQuote(
-                price=self.round_to_tick(
-                    self.index + (SPREAD + ASK_STEP * lvl) * self.tick
-                ),
+                price=self.round_to_tick(self.index + (SPREAD + ASK_STEP * lvl) * self.tick),
                 amount=amt,
             )
             for lvl, amt in enumerate(ASK_SIZES)
@@ -180,13 +177,9 @@ class PerpQuoter:
                 # We have more open orders than we want. Let's cancel the excess that's open.
                 if orders[i].is_open():
                     logging.info(f"Cancelling {side.value}-{i} {orders[i].id}")
-                    await self.thalex.cancel(
-                        client_order_id=orders[i].id, id=orders[i].id
-                    )
+                    await self.thalex.cancel(client_order_id=orders[i].id, id=orders[i].id)
             for q_lvl, q in enumerate(quotes):
-                if len(orders) <= q_lvl or (
-                    orders[q_lvl].status is not None and not orders[q_lvl].is_open()
-                ):
+                if len(orders) <= q_lvl or (orders[q_lvl].status is not None and not orders[q_lvl].is_open()):
                     # We don't have this many levels, or the order of this level is not open.
                     # Let's insert a new one.
                     client_order_id = self.client_order_id
@@ -195,9 +188,7 @@ class PerpQuoter:
                         orders.append(Order(client_order_id, q.p, q.a))
                     else:
                         orders[q_lvl] = Order(client_order_id, q.p, q.a)
-                    logging.info(
-                        f"Inserting {client_order_id} {side.value}-{q_lvl} {q.a}@{q.p}"
-                    )
+                    logging.info(f"Inserting {client_order_id} {side.value}-{q_lvl} {q.a}@{q.p}")
                     await self.thalex.insert(
                         direction=side,
                         instrument_name=self.perp_name,
@@ -210,9 +201,7 @@ class PerpQuoter:
                     )
                 elif abs(orders[q_lvl].price - q.p) > AMEND_THRESHOLD * self.tick:
                     # We have on open order on this level. If it's different enough, let's amend.
-                    logging.info(
-                        f"Amending {orders[q_lvl].id} {side.value}-{q_lvl} {orders[q_lvl].price} -> {q.p}"
-                    )
+                    logging.info(f"Amending {orders[q_lvl].id} {side.value}-{q_lvl} {orders[q_lvl].price} -> {q.p}")
                     await self.thalex.amend(
                         amount=q.a,
                         price=q.p,
@@ -361,7 +350,7 @@ async def main():
             time.sleep(0.1)
         except asyncio.CancelledError:
             run = False
-        except:
+        except:  # noqa: E722
             logging.exception("There was an unexpected error:")
         if thalex.connected():
             await thalex.cancel_session(id=CALL_ID_CANCEL_SESSION)
@@ -369,7 +358,7 @@ async def main():
                 r = await thalex.receive()
                 r = json.loads(r)
                 if r.get("id", -1) == CALL_ID_CANCEL_SESSION:
-                    logging.info(f"Cancelled session orders")
+                    logging.info("Cancelled session orders")
                     break
             await thalex.disconnect()
         for t in tasks:

@@ -1,10 +1,10 @@
 import asyncio
 import json
 import logging
-from typing import Optional, Dict
+from typing import Dict, Optional
 
-import thalex as th
 import keys
+import thalex as th
 
 NETWORK = th.Network.TEST
 
@@ -90,9 +90,7 @@ class RfqQuoter:
 
     async def quote(self):
         await self.load_instruments()
-        await self.thalex.login(
-            keys.key_ids[NETWORK], keys.private_keys[NETWORK], id=CID_LOGIN
-        )
+        await self.thalex.login(keys.key_ids[NETWORK], keys.private_keys[NETWORK], id=CID_LOGIN)
         await self.thalex.set_cancel_on_disconnect(6, id=CALL_ID_SET_COD)
         await self.thalex.private_subscribe(["mm.rfqs"], id=CID_SUBSCRIBE)
         while True:
@@ -122,7 +120,7 @@ async def main():
     quoter = RfqQuoter(thalex)
     try:
         await quoter.quote()
-    except:
+    except:  # noqa E722
         logging.exception("There was an oupsie:")
     await thalex.disconnect()
 

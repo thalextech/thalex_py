@@ -19,6 +19,7 @@ dependencies = [
     "websockets>=14.1",
     "PyJWT>=2.8.0",
     "cryptography>=42.0.5",
+    "pytest (>=8.4.2,<9.0.0)",
 ]
 license = {file = "LICENSE"}
 
@@ -31,12 +32,54 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build]
 include = [
-    "thalex/**/*",
+    "thalex",
     "README.md"
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["thalex"]
 
-[tool.black]
-line-length = 90
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.13.1"
+tbump = "^6.11.0"
+pytest-rerun = "^0.0.1"
+pytest-rerunfailures = "^16.0.1"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+respect-gitignore = true
+extend-exclude = [
+  ".eggs",
+  ".git",
+  ".hg",
+  ".mypy_cache",
+  ".tox",
+  ".venv",
+  "_build",
+  "buck-out",
+  "build",
+  "dist",
+  "docs/conf.py",
+]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+#  "I",   # isort
+#  "B",   # flake8-bugbear
+#  "UP",  # pyupgrade
+#  "C4",  # flake8-comprehensions
+#  "SIM", # flake8-simplify
+#  "PT",  # flake8-pytest-style (if you use pytest)
+#  "RUF", # Ruff-specific rules
+]
+ignore = ["E501"]
+
+[tool.ruff.format]
+line-ending = "auto"
+quote-style = "preserve"
+indent-style = "space"
+skip-magic-trailing-comma = false

@@ -48,17 +48,11 @@ class BinaryReplicator:
 
             if msg.get("channel_name") == "account.portfolio":
                 self.position = next(
-                    (
-                        pos["position"]
-                        for pos in msg.get("notification")
-                        if pos["instrument_name"] == INSTRUMENT_NAME
-                    ),
+                    (pos["position"] for pos in msg.get("notification") if pos["instrument_name"] == INSTRUMENT_NAME),
                     0,
                 )
 
-                logging.info(
-                    f"New position in {INSTRUMENT_NAME}: {round(self.position, 3)}"
-                )
+                logging.info(f"New position in {INSTRUMENT_NAME}: {round(self.position, 3)}")
 
                 if self.position == 0:
                     await self.thalex.create_conditional_order(
@@ -84,9 +78,7 @@ class BinaryReplicator:
 
 
 async def main():
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     await BinaryReplicator().run()
 
 
