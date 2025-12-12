@@ -1,6 +1,6 @@
 [project]
 name = "thalex"
-version = "1.1.0"
+version = "1.2.0"
 authors = [
   {email="thalex_py@thalex.com"},
 ]
@@ -9,7 +9,7 @@ maintainers = [
 ]
 description = "Thalex exchange connector"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9,<4"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",

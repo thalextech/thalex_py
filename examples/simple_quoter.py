@@ -152,7 +152,7 @@ async def main():
         except asyncio.CancelledError:
             logging.info("Quoting cancelled")
             run = False
-        except:
+        except Exception:
             logging.exception("There was an unexpected error:")
             run = False
         if tlx.connected():

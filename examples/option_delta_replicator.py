@@ -196,7 +196,7 @@ async def main():
             # It can (and does) happen that we lose connection for whatever reason. If it happens We wait a little,
             # so that if the connection loss is persistent, we don't just keep trying in a hot loop, then reconnect.
             # An exponential backoff would be nicer.
-            logging.exception(f"Lost connection. Reconnecting...")
+            logging.exception("Lost connection. Reconnecting...")
             time.sleep(0.1)
         except asyncio.CancelledError:
             # This means we are stopping the program from the outside (eg Ctrl+C on OSX/Linux)

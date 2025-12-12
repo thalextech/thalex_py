@@ -68,6 +68,11 @@ class Resolution(enum.Enum):
     W1 = "1w"
 
 
+class Sort(enum.Enum):
+    ASC = "ascending"
+    DESC = "descending"
+
+
 class RfqLeg:
     def __init__(self, amount: float, instrument_name: str):
         self.instrument_name = instrument_name
@@ -310,8 +315,8 @@ class Thalex:
             client_order_id=client_order_id,
             price=price,
             label=label,
-            order_type=order_type.value if order_type is not None else None,
-            time_in_force=time_in_force.value if time_in_force is not None else None,
+            order_type=order_type and order_type.value,
+            time_in_force=time_in_force and time_in_force.value,
             post_only=post_only,
             reject_post_only=reject_post_only,
             reduce_only=reduce_only,
@@ -363,8 +368,8 @@ class Thalex:
             client_order_id=client_order_id,
             price=price,
             label=label,
-            order_type=order_type.value if order_type is not None else None,
-            time_in_force=time_in_force.value if time_in_force is not None else None,
+            order_type=order_type and order_type.value,
+            time_in_force=time_in_force and time_in_force.value,
             collar=collar,
         )
 
@@ -423,8 +428,8 @@ class Thalex:
             client_order_id=client_order_id,
             price=price,
             label=label,
-            order_type=order_type.value if order_type is not None else None,
-            time_in_force=time_in_force.value if time_in_force is not None else None,
+            order_type=order_type and order_type.value,
+            time_in_force=time_in_force and time_in_force.value,
             post_only=post_only,
             reject_post_only=reject_post_only,
             reduce_only=reduce_only,
@@ -486,8 +491,8 @@ class Thalex:
             client_order_id=client_order_id,
             price=price,
             label=label,
-            order_type=order_type.value if order_type is not None else None,
-            time_in_force=time_in_force.value if time_in_force is not None else None,
+            order_type=order_type and order_type.value,
+            time_in_force=time_in_force and time_in_force.value,
             post_only=post_only,
             reject_post_only=reject_post_only,
             reduce_only=reduce_only,
@@ -762,6 +767,9 @@ class Thalex:
         time_low: Optional[int] = None,
         time_high: Optional[int] = None,
         bookmark: Optional[str] = None,
+        sort: Optional[Sort] = None,
+        instrument_names: Optional[str] = None,
+        bot_ids: Optional[str] = None,
         id: Optional[int] = None,
     ):
         """Trade history
@@ -778,6 +786,9 @@ class Thalex:
             time_low=time_low,
             time_high=time_high,
             bookmark=bookmark,
+            sort=sort and sort.value,
+            instrument_names=instrument_names,
+            bot_ids=bot_ids,
         )
 
     async def daily_mark_history(
@@ -1359,3 +1370,314 @@ class Thalex:
         request = json.dumps(request)
         logging.debug(f"Sending {request=}")
         await self.ws.send(request)
+
+    async def create_sgsl_bot(
+        self,
+        end_time: float,
+        instrument_name: str,
+        signal: Target,
+        entry_price: float,
+        target_position: float,
+        exit_price: float,
+        exit_position: float,
+        max_slippage: Optional[float] = None,
+        label: Optional[str] = None,
+        id: Optional[int] = None,
+    ):
+        """Instantiate a bot that keeps continually trading in your name according to the sgsl strategy.
+         See https://www.thalex.com/docs/#tag/bot_strategies/Start-Gain-Stop-Loss for more info on the strategy.
+         For risk fencing reasons and because of the complex ways manual trades can interact with bot strategies,
+         you might want to consider running bots on a separate/dedicated sub account.
+         Also be aware that you can set up bots with different strategies in a way that they would end up trading with each other.
+
+        :instrument_name:  Name of the instrument to run SGSL on.
+        :signal: The target that entry_price and exit_price will be compared to.
+        :entry_price: Price to compare signal price to, to determine necessary adjustments to the portfolio.
+        :target_position: The target position to maintain in the subaccount if signal price is above entry_price.
+        :exit_price: Price to compare signal price to, to determine necessary adjustments to the portfolio.
+        :exit_position: The target position to maintain in the subaccount if signal price is below exit_price.
+        :max_slippage: Maximum slippage per trade, expressed as % of the traded instruments mark price.
+        :end_time: Timestamp when the bot should stop executing.
+            When end_time is reached, the bot will leave all positions intact, it will not open/close any of them.
+        :label:  A label that the bot will add to all orders for easy identification.
+        """
+        await self._send(
+            "private/create_bot",
+            id,
+            strategy="sgsl",
+            instrument_name=instrument_name,
+            signal=signal and signal.value,
+            entry_price=entry_price,
+            target_position=target_position,
+            exit_price=exit_price,
+            exit_position=exit_position,
+            max_slippage=max_slippage,
+            end_time=end_time,
+            label=label,
+        )
+
+    async def create_ocq_bot(
+        self,
+        end_time: float,
+        instrument_name: str,
+        signal: Target,
+        bid_offset: float,
+        ask_offset: float,
+        quote_size: float,
+        min_position: float,
+        max_position: float,
+        exit_offset: Optional[float] = None,
+        target_position: Optional[float] = None,
+        label: Optional[str] = None,
+        id: Optional[int] = None,
+    ):
+        """Instantiate a bot that keeps continually trading in your name according to the ocq strategy.
+         See https://www.thalex.com/docs/#tag/bot_strategies/One-Click-Quoter for more info on the strategy.
+         For risk fencing reasons and because of the complex ways manual trades can interact with bot strategies,
+         you might want to consider running bots on a separate/dedicated sub account.
+         Also be aware that you can set up bots with different strategies in a way that they would end up trading with each other.
+
+        :instrument_name:  Name of the instrument to run OCQ on.
+        :signal: The target signal to offset the quotes from.
+        :bid_offset: The offset of the price of the bid quote from the signal price. Must be smaller than ask_offset.
+        :ask_offset: The offset of the price of the ask quote from the signal price. Must be greater than bid_offset.
+        :exit_offset: Optional offset of the price of the exit quote from the signal price. Must be between bid_offset and ask_offset.
+        :quote_size: The default size of both the bid and ask quote.
+        :min_position: The minimum portfolio position to maintain in the subaccount. Must be smaller than max_position.
+        :max_position: The maximum portfolio position to maintain in the subaccount. Must be greater than min_position.
+        :target_position: Optional portfolio position to maintain in the subaccount. Must be between min_position and max_position.
+        :end_time: Timestamp when the bot should stop executing.
+            When end_time is reached, the bot will leave all positions intact, it will not open/close any of them.
+        :label:  A label that the bot will add to all orders for easy identification.
+        """
+        await self._send(
+            "private/create_bot",
+            id,
+            strategy="ocq",
+            instrument_name=instrument_name,
+            signal=signal and signal.value,
+            bid_offset=bid_offset,
+            ask_offset=ask_offset,
+            quote_size=quote_size,
+            min_position=min_position,
+            max_position=max_position,
+            exit_offset=exit_offset,
+            target_position=target_position,
+            end_time=end_time,
+            label=label,
+        )
+
+    async def create_levels_bot(
+        self,
+        end_time: float,
+        instrument_name: str,
+        bids: [float],
+        asks: [float],
+        step_size: float,
+        base_position: Optional[float] = None,
+        target_mean_price: Optional[float] = None,
+        upside_exit_price: Optional[float] = None,
+        downside_exit_price: Optional[float] = None,
+        max_slippage: Optional[float] = None,
+        label: Optional[str] = None,
+        id: Optional[int] = None,
+    ):
+        """Instantiate a bot that keeps continually trading in your name according to the ocq strategy.
+         See https://www.thalex.com/docs/#tag/bot_strategies/Levels for more info on the strategy.
+         For risk fencing reasons and because of the complex ways manual trades can interact with bot strategies,
+         you might want to consider running bots on a separate/dedicated sub account.
+         Also be aware that you can set up bots with different strategies in a way that they would end up trading with each other.
+
+        :instrument_name:  Name of the instrument to run Levels bot on.
+        :bids: The default price levels the bot will be bidding at.
+        :asks: The default price levels the bot will be quoting on the ask side.
+        :step_size: The default size to quote on one level.
+        :base_position: Will be used as a reference to compare the subaccount's portfolio position in the instrument that this bot is trading to.
+            Defaults to the portfolio position of the subaccount in instrument_name at the time of sending the request.
+        :target_mean_price: The price level to exit positions at.
+        :upside_exit_price: If the mark price of the instrument this bot is trading goes above `upside_exit_price`,
+                the bot cancels the maker orders, aggressively trades into `base_position`, and then stops executing.
+        :downside_exit_price: If the mark price of the instrument this bot is trading goes below `downside_exit_price`,
+                the bot cancels the maker orders, aggressively trades into `base_position`, and then stops executing.
+        :max_slippage: Maximum slippage per trade when exiting any position, expressed as % of the traded instruments mark price.
+        :step_size: The default size of both the bid and ask quote.
+        :end_time: Timestamp when the bot should stop executing.
+            When end_time is reached, the bot will leave all positions intact, it will not open/close any of them.
+        :label:  A label that the bot will add to all orders for easy identification.
+        """
+        await self._send(
+            "private/create_bot",
+            id,
+            strategy="levels",
+            instrument_name=instrument_name,
+            bids=bids,
+            asks=asks,
+            step_size=step_size,
+            base_position=base_position,
+            target_mean_price=target_mean_price,
+            upside_exit_price=upside_exit_price,
+            downside_exit_price=downside_exit_price,
+            max_slippage=max_slippage,
+            end_time=end_time,
+            label=label,
+        )
+
+    async def create_grid_bot(
+        self,
+        end_time: float,
+        instrument_name: str,
+        grid: [float],
+        step_size: float,
+        base_position: Optional[float] = None,
+        target_mean_price: Optional[float] = None,
+        upside_exit_price: Optional[float] = None,
+        downside_exit_price: Optional[float] = None,
+        max_slippage: Optional[float] = None,
+        label: Optional[str] = None,
+        id: Optional[int] = None,
+    ):
+        """Instantiate a bot that keeps continually trading in your name according to the ocq strategy.
+         See https://www.thalex.com/docs/#tag/bot_strategies/Grid for more info on the strategy.
+         For risk fencing reasons and because of the complex ways manual trades can interact with bot strategies,
+         you might want to consider running bots on a separate/dedicated sub account.
+         Also be aware that you can set up bots with different strategies in a way that they would end up trading with each other.
+
+        :instrument_name:  Name of the instrument to run Grid bot on.
+        :grid: The default price levels the bot will be quoting at.
+        :step_size: The default size to quote on one level.
+        :base_position: Will be used as a reference to compare the subaccount's portfolio position in the instrument that this bot is trading to.
+            Defaults to the portfolio position of the subaccount in instrument_name at the time of sending the request.
+        :target_mean_price: As long as the account's portfolio position in the instrument that the bot is trading is equal to base_position,
+                the bot will insert step_size asks on the grid above target_mean_price (one per level),
+                and step_size bids below target_mean_price.
+        :upside_exit_price: If the mark price of the instrument this bot is trading goes above `upside_exit_price`,
+                the bot cancels the maker orders, aggressively trades into `base_position`, and then stops executing.
+        :downside_exit_price: If the mark price of the instrument this bot is trading goes below `downside_exit_price`,
+                the bot cancels the maker orders, aggressively trades into `base_position`, and then stops executing.
+        :max_slippage: Maximum slippage per trade when exiting any position, expressed as % of the traded instruments mark price.
+        :end_time: Timestamp when the bot should stop executing.
+            When end_time is reached, the bot will leave all positions intact, it will not open/close any of them.
+        :label:  A label that the bot will add to all orders for easy identification.
+        """
+        await self._send(
+            "private/create_bot",
+            id,
+            strategy="grid",
+            instrument_name=instrument_name,
+            grid=grid,
+            step_size=step_size,
+            base_position=base_position,
+            target_mean_price=target_mean_price,
+            upside_exit_price=upside_exit_price,
+            downside_exit_price=downside_exit_price,
+            max_slippage=max_slippage,
+            end_time=end_time,
+            label=label,
+        )
+
+    async def create_delta_hedger_bot(
+        self,
+        end_time: float,
+        instrument_name: str,
+        period: float,
+        position: Optional[str] = None,
+        target_delta: Optional[float] = None,
+        threshold: Optional[float] = None,
+        tolerance: Optional[float] = None,
+        max_slippage: Optional[float] = None,
+        label: Optional[str] = None,
+        id: Optional[int] = None,
+    ):
+        """Instantiate a bot that keeps continually trading in your name according to the ocq strategy.
+         See https://www.thalex.com/docs/#tag/bot_strategies/Delta-Hedger for more info on the strategy.
+         For risk fencing reasons and because of the complex ways manual trades can interact with bot strategies,
+         you might want to consider running bots on a separate/dedicated sub account.
+         Also be aware that you can set up bots with different strategies in a way that they would end up trading with each other.
+
+        :instrument_name:  Name of the instrument the bot will trade.
+            Must be an outright instrument with at least 0.25 delta.
+        :position: Name of an outright instrument. If specified, the bot will only hedge the position in this instrument, not the entire underlying.
+        :target_delta: Delta to target. Defaults to 0.
+        :threshold: Hedging threshold. Defaults to 0.
+        :tolerance: Maximum deviation allowed from target deltas at any time.
+        :period: Number of seconds to let the deltas stay outside of [target-threshold, target+threshold], before hedging them. Must be between 1 and 3600.
+        :max_slippage: Maximum slippage per trade when exiting any position, expressed as % of the traded instruments mark price.
+        :end_time: Timestamp when the bot should stop executing.
+            When end_time is reached, the bot will leave all positions intact, it will not open/close any of them.
+        :label:  A label that the bot will add to all orders for easy identification.
+        """
+        await self._send(
+            "private/create_bot",
+            id,
+            strategy="dhedge",
+            instrument_name=instrument_name,
+            period=period,
+            position=position,
+            target_delta=target_delta,
+            threshold=threshold,
+            tolerance=tolerance,
+            max_slippage=max_slippage,
+            end_time=end_time,
+            label=label,
+        )
+
+    async def create_delta_follower_bot(
+        self,
+        end_time: float,
+        instrument_name: str,
+        target_instrument: str,
+        target_amount: float,
+        period: float,
+        threshold: Optional[float] = None,
+        tolerance: Optional[float] = None,
+        max_slippage: Optional[float] = None,
+        label: Optional[str] = None,
+        id: Optional[int] = None,
+    ):
+        """Instantiate a bot that keeps continually trading in your name according to the ocq strategy.
+         See https://www.thalex.com/docs/#tag/bot_strategies/Delta-Follower for more info on the strategy.
+         For risk fencing reasons and because of the complex ways manual trades can interact with bot strategies,
+         you might want to consider running bots on a separate/dedicated sub account.
+         Also be aware that you can set up bots with different strategies in a way that they would end up trading with each other.
+
+        :instrument_name:  Name of the instrument the bot will trade.
+            Must be an outright instrument with at least 0.25 delta.
+        :target_instrument: Name of the outright option to follow the deltas of.
+        :target_amount: Amount of target_instrument contracts to follow the deltas of. Must be between 0.1 and 1000.
+        :threshold: Hedging threshold. Defaults to 0.
+        :tolerance: Maximum deviation allowed from target deltas at any time.
+        :period: Number of seconds to let the deltas stay outside of [target-threshold, target+threshold], before hedging them. Must be between 1 and 3600.
+        :max_slippage: Maximum slippage per trade when exiting any position, expressed as % of the traded instruments mark price.
+        :end_time: Timestamp when the bot should stop executing.
+            When end_time is reached, the bot will leave all positions intact, it will not open/close any of them.
+        :label:  A label that the bot will add to all orders for easy identification.
+        """
+        await self._send(
+            "private/create_bot",
+            id,
+            strategy="dfollow",
+            instrument_name=instrument_name,
+            period=period,
+            target_instrument=target_instrument,
+            target_amount=target_amount,
+            threshold=threshold,
+            tolerance=tolerance,
+            max_slippage=max_slippage,
+            end_time=end_time,
+            label=label,
+        )
+
+    async def cancel_bot(self, bot_id: str, id: Optional[int] = None):
+        """Cancel a specific bot instance.
+
+        :bot_id: The bot_id returned when creating the bot, or calling private/bots.
+        """
+        await self._send("private/cancel_bot", id, bot_id=bot_id)
+
+    async def cancel_all_bots(self, id: Optional[int] = None):
+        """Cancel all bots of this subaccount"""
+        await self._send("private/cancel_all_bots", id)
+
+    async def bots(self, id: Optional[int] = None):
+        """Get the bots of this subaccount."""
+        await self._send("private/bots", id)

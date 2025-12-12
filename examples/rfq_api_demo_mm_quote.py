@@ -122,7 +122,7 @@ async def main():
     quoter = RfqQuoter(thalex)
     try:
         await quoter.quote()
-    except:
+    except Exception:
         logging.exception("There was an oupsie:")
     await thalex.disconnect()
 

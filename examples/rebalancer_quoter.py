@@ -136,7 +136,8 @@ class Quoter:
 
         qs = Quotes(self.position, self.mark, self.index)
         assert qs.bid_price < qs.r_price < qs.ask_price
-        adjustments = [self.adjust_order(
+        adjustments = [
+            self.adjust_order(
                 side=Direction.SELL,
                 price=qs.ask_price,
                 amount=qs.ask_amt,
@@ -156,7 +157,8 @@ class Quoter:
                 amount=qs.bid_amt,
                 confirmed=self.quotes[Direction.BUY],
                 quote_id=QUOTE_ID[Direction.BUY],
-            )]
+            ),
+        ]
         if not up:
             adjustments.reverse()
         for a in adjustments:
@@ -173,7 +175,9 @@ class Quoter:
         elif channel.startswith("price_index"):
             await self.update_quotes(new_index=notification["price"])
         elif channel == "account.portfolio":
-            await self.tlx.cancel_session(id=CID_CANCEL)  # Cancel all orders in this session
+            await self.tlx.cancel_session(
+                id=CID_CANCEL
+            )  # Cancel all orders in this session
             self.quotes = {Direction.BUY: {}, Direction.SELL: {}}
             try:
                 self.position = next(
@@ -183,14 +187,21 @@ class Quoter:
                 self.position = self.position or 0
             logging.info(f"Portfolio updated - {INSTRUMENT} position: {self.position}")
         elif channel.startswith("ticker"):
-            self.tob = [notification.get("best_bid_price"), notification.get("best_ask_price")]
+            self.tob = [
+                notification.get("best_bid_price"),
+                notification.get("best_ask_price"),
+            ]
             self.mark = notification.get("mark_price")
             self.fr = notification.get("funding_rate")
 
     async def quote(self):
         await self.tlx.connect()
-        await self.tlx.public_subscribe([f"price_index.{INDEX}", f"ticker.{INSTRUMENT}.500ms"], id=CID_PUBSUB)
-        await self.tlx.login(keys.key_ids[NETWORK], keys.private_keys[NETWORK], id=CID_LOGIN)
+        await self.tlx.public_subscribe(
+            [f"price_index.{INDEX}", f"ticker.{INSTRUMENT}.500ms"], id=CID_PUBSUB
+        )
+        await self.tlx.login(
+            keys.key_ids[NETWORK], keys.private_keys[NETWORK], id=CID_LOGIN
+        )
 
         while True:
             msg = await self.tlx.receive()
@@ -200,8 +211,12 @@ class Quoter:
             elif "result" in msg:
                 cid = msg.get("id", -1)
                 if cid == CID_LOGIN:
-                    await self.tlx.set_cancel_on_disconnect(timeout_secs=6, id=CID_SET_COD)
-                    await self.tlx.private_subscribe(["session.orders", "account.portfolio"], id=CID_PRIVSUB)
+                    await self.tlx.set_cancel_on_disconnect(
+                        timeout_secs=6, id=CID_SET_COD
+                    )
+                    await self.tlx.private_subscribe(
+                        ["session.orders", "account.portfolio"], id=CID_PRIVSUB
+                    )
                 else:
                     logging.debug(msg)
             else:
@@ -226,13 +241,17 @@ async def main():
         tasks = [asyncio.create_task(quoter.quote())]
         try:
             await asyncio.gather(*tasks)
-        except (websockets.ConnectionClosed, socket.gaierror, websockets.InvalidStatus) as e:
+        except (
+            websockets.ConnectionClosed,
+            socket.gaierror,
+            websockets.InvalidStatus,
+        ) as e:
             logging.warning(f"Lost connection ({e}). Reconnecting...")
             time.sleep(0.5)
         except asyncio.CancelledError:
             logging.info("Quoting cancelled")
             run = False
-        except:
+        except Exception:
             logging.exception("There was an unexpected error:")
             run = False
         if tlx.connected():

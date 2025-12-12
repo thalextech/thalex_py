@@ -361,7 +361,7 @@ async def main():
             time.sleep(0.1)
         except asyncio.CancelledError:
             run = False
-        except:
+        except Exception:
             logging.exception("There was an unexpected error:")
         if thalex.connected():
             await thalex.cancel_session(id=CALL_ID_CANCEL_SESSION)
@@ -369,7 +369,7 @@ async def main():
                 r = await thalex.receive()
                 r = json.loads(r)
                 if r.get("id", -1) == CALL_ID_CANCEL_SESSION:
-                    logging.info(f"Cancelled session orders")
+                    logging.info("Cancelled session orders")
                     break
             await thalex.disconnect()
         for t in tasks:

@@ -730,7 +730,7 @@ async def main():
                     r = await thalex.receive()
                     r = json.loads(r)
                     if r.get("id", -1) == CALL_ID_CANCEL_SESSION:
-                        logging.info(f"Cancelled session orders")
+                        logging.info("Cancelled session orders")
                         break
                 await thalex.disconnect()
 
