@@ -73,6 +73,17 @@ class Sort(enum.Enum):
     DESC = "descending"
 
 
+class STPLevel(enum.Enum):
+    CUSTOMER = "customer"
+    ACCOUNT = "account"
+    DISABLED = "disabled"
+
+
+class STPAction(enum.Enum):
+    CANCEL_AGGRESSIVE_WITH_FILL = "cancel_aggressive_partial_fill"
+    CANCEL_AGGRESSIVE_NO_FILL = "cancel_aggressive_no_fill"
+
+
 class RfqLeg:
     def __init__(self, amount: float, instrument_name: str):
         self.instrument_name = instrument_name
@@ -271,6 +282,8 @@ class Thalex:
         reject_post_only: Optional[bool] = None,
         reduce_only: Optional[bool] = None,
         collar: Optional[Collar] = None,
+        stp_level: Optional[STPLevel] = None,
+        stp_action: Optional[STPAction] = None,
         id: Optional[int] = None,
     ):
         """Insert order
@@ -305,6 +318,12 @@ class Thalex:
             If `clamp`, the price is adjusted to the collar.
             The default is `clamp` for market orders and `reject` for everything else.
             Collar `ignore` is forbidden for market orders.
+        :stp_level:  The self trade prevention level override for this order. Needs configuration to be enabled,
+            see https://www.thalex.com/docs/#section/API-description/Self-trade-prevention for more explanation.
+        :stp-action:  The self trade prevention action override for this order. Needs configuration to be enabled,
+            see https://www.thalex.com/docs/#section/API-description/Self-trade-prevention for more explanation.
+            The default is cancel_aggressive_partial_fill and not configurable.
+        The default is customer and not configurable.
         """
         await self._send(
             "private/insert",
@@ -321,6 +340,8 @@ class Thalex:
             reject_post_only=reject_post_only,
             reduce_only=reduce_only,
             collar=collar,
+            stp_level=stp_level,
+            stp_action=stp_action,
         )
 
     async def insert_combo(
@@ -334,6 +355,8 @@ class Thalex:
         order_type: Optional[OrderType] = None,
         time_in_force: Optional[TimeInForce] = TimeInForce.IOC,
         collar: Optional[Collar] = None,
+        stp_level: Optional[STPLevel] = None,
+        stp_action: Optional[STPAction] = None,
         id: Optional[int] = None,
     ):
         """Insert order
@@ -358,6 +381,11 @@ class Thalex:
             The default is `clamp` for market orders and `reject` for everything else.
             Collar `ignore` is forbidden for market orders.
             Price collar is a linear combination of the leg collars with their corresponding quantities as coefficients.
+        :stp_level:  The self trade prevention level override for this order. Needs configuration to be enabled,
+            see https://www.thalex.com/docs/#section/API-description/Self-trade-prevention for more explanation.
+        :stp-action:  The self trade prevention action override for this order. Needs configuration to be enabled,
+            see https://www.thalex.com/docs/#section/API-description/Self-trade-prevention for more explanation.
+            The default is cancel_aggressive_partial_fill and not configurable.
         """
         await self._send(
             "private/insert",
@@ -371,6 +399,8 @@ class Thalex:
             order_type=order_type and order_type.value,
             time_in_force=time_in_force and time_in_force.value,
             collar=collar,
+            stp_level=stp_level,
+            stp_action=stp_action,
         )
 
     async def buy(
@@ -386,6 +416,8 @@ class Thalex:
         reject_post_only: Optional[bool] = None,
         reduce_only: Optional[bool] = None,
         collar: Optional[Collar] = None,
+        stp_level: Optional[STPLevel] = None,
+        stp_action: Optional[STPAction] = None,
         id: Optional[int] = None,
     ):
         """Insert buy order
@@ -419,6 +451,11 @@ class Thalex:
             If `clamp`, the price is adjusted to the collar.
             The default is `clamp` for market orders and `reject` for everything else.
             Collar `ignore` is forbidden for market orders.
+        :stp_level:  The self trade prevention level override for this order. Needs configuration to be enabled,
+            see https://www.thalex.com/docs/#section/API-description/Self-trade-prevention for more explanation.
+        :stp-action:  The self trade prevention action override for this order. Needs configuration to be enabled,
+            see https://www.thalex.com/docs/#section/API-description/Self-trade-prevention for more explanation.
+            The default is cancel_aggressive_partial_fill and not configurable.
         """
         await self._send(
             "private/buy",
@@ -434,6 +471,8 @@ class Thalex:
             reject_post_only=reject_post_only,
             reduce_only=reduce_only,
             collar=collar,
+            stp_level=stp_level,
+            stp_action=stp_action,
         )
 
     async def sell(
@@ -449,6 +488,8 @@ class Thalex:
         reject_post_only: Optional[bool] = None,
         reduce_only: Optional[bool] = None,
         collar: Optional[Collar] = None,
+        stp_level: Optional[STPLevel] = None,
+        stp_action: Optional[STPAction] = None,
         id: Optional[int] = None,
     ):
         """Insert sell order
@@ -482,6 +523,11 @@ class Thalex:
             If `clamp`, the price is adjusted to the collar.
             The default is `clamp` for market orders and `reject` for everything else.
             Collar `ignore` is forbidden for market orders.
+        :stp_level:  The self trade prevention level override for this order. Needs configuration to be enabled,
+            see https://www.thalex.com/docs/#section/API-description/Self-trade-prevention for more explanation.
+        :stp-action:  The self trade prevention action override for this order. Needs configuration to be enabled,
+            see https://www.thalex.com/docs/#section/API-description/Self-trade-prevention for more explanation.
+            The default is cancel_aggressive_partial_fill and not configurable.
         """
         await self._send(
             "private/sell",
@@ -497,6 +543,8 @@ class Thalex:
             reject_post_only=reject_post_only,
             reduce_only=reduce_only,
             collar=collar,
+            stp_level=stp_level,
+            stp_action=stp_action,
         )
 
     async def amend(
@@ -1577,7 +1625,7 @@ class Thalex:
 
     async def create_delta_hedger_bot(
         self,
-        end_time: float,
+        end_time: Optional[float],
         instrument_name: str,
         period: float,
         position: Optional[str] = None,
@@ -1623,7 +1671,7 @@ class Thalex:
 
     async def create_delta_follower_bot(
         self,
-        end_time: float,
+        end_time: Optional[float],
         instrument_name: str,
         target_instrument: str,
         target_amount: float,
